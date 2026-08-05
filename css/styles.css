@@ -197,6 +197,29 @@
   .bubble.bot{align-self:flex-start; background:#fff; border:1px solid var(--line); border-bottom-left-radius:3px;}
   .preview-meta{display:flex; gap:8px; flex-wrap:wrap; margin-top:12px;}
 
+  /* Wizard / edit: call agent live preview */
+  .preview-call{border:1px solid #1a1f2e; border-radius:13px; overflow:hidden; background:var(--ink); color:#fff;}
+  .preview-call.hidden{display:none !important;}
+  .preview-chat.hidden{display:none !important;}
+  .pv-call-inner{padding:28px 18px 22px; text-align:center;}
+  .pv-call-pulse{width:64px;height:64px;border-radius:50%; background:var(--grad); margin:0 auto 14px; display:flex; align-items:center; justify-content:center; font-size:24px; box-shadow:0 0 0 0 rgba(91,95,239,0.5); animation:callPulse 1.6s infinite;}
+  .pv-call-pulse::before{content:"📞";}
+  .pv-call-dir{font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:#AEB1C6; margin-bottom:8px;}
+  .pv-call-number{font-size:18px; font-weight:700; font-family:'Space Grotesk',system-ui,sans-serif; margin-bottom:6px;}
+  .pv-call-agent{font-size:12px; color:#C3C6DE; margin-bottom:10px;}
+  .pv-call-status{font-size:12.5px; font-weight:600; color:#9EA3FF; margin-bottom:14px;}
+  .pv-call-transcript{font-size:12.5px; line-height:1.5; color:#C3C6DE; min-height:48px; text-align:left; background:rgba(255,255,255,0.06); border-radius:10px; padding:10px 12px; margin-bottom:14px;}
+  .pv-call-actions{display:flex; gap:10px; justify-content:center;}
+  .pv-call-pill{border-radius:99px; padding:8px 16px; font-weight:700; font-size:12px;}
+  .pv-call-pill.decline{background:#DC2626; color:#fff;}
+  .pv-call-pill.accept{background:#16A34A; color:#fff;}
+  .pv-call-pill.hangup{background:#374151; color:#fff;}
+  .demo-call-preview{background:var(--ink); color:#fff; border-radius:14px; padding:28px 20px 22px; text-align:center;}
+  .demo-call-preview .pv-call-transcript{white-space:pre-wrap;}
+  .preview-call.outbound .pv-call-actions .decline,
+  .preview-call.outbound .pv-call-actions .accept{display:none;}
+  .preview-call.inbound .pv-call-pill.hangup{display:none;}
+
   .wizard-foot{display:flex; align-items:center; justify-content:space-between; padding:18px 26px; border-top:1px solid var(--line);}
   .wizard-foot .right-btns{display:flex; gap:10px;}
 

@@ -158,10 +158,24 @@
               <button class="btn btn-primary" style="width:auto; padding:11px 22px;" onclick="saveEdit()">Save changes</button>
             </div>
             <div class="preview-panel">
-              <div class="preview-panel-label">Live Preview</div>
-              <div class="preview-chat">
+              <div class="preview-panel-label" id="e-preview-label">Live Preview</div>
+              <div class="preview-chat" id="e-preview-chat">
                 <div class="ph"><span class="role-name" id="e-preview-voice">Emma</span>&nbsp;· <span id="e-preview-lang">English</span></div>
                 <div class="pb" id="e-preview-body"></div>
+              </div>
+              <div class="preview-call hidden" id="e-preview-call">
+                <div class="pv-call-inner">
+                  <div class="pv-call-pulse" aria-hidden="true"></div>
+                  <div class="pv-call-dir" id="e-call-dir">Incoming Call</div>
+                  <div class="pv-call-number" id="e-call-number">+1 (555) 010-2001</div>
+                  <div class="pv-call-agent" id="e-call-agent">Emma · English</div>
+                  <div class="pv-call-status" id="e-call-status">Ringing…</div>
+                  <div class="pv-call-transcript" id="e-call-transcript"></div>
+                  <div class="pv-call-actions" id="e-call-actions">
+                    <span class="pv-call-pill decline">Decline</span>
+                    <span class="pv-call-pill accept">Accept</span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -677,10 +691,24 @@
 
       <!-- PERSISTENT LIVE PREVIEW -->
       <div class="preview-panel">
-        <div class="preview-panel-label">Live Preview</div>
-        <div class="preview-chat">
+        <div class="preview-panel-label" id="pv-label">Live Preview</div>
+        <div class="preview-chat" id="pv-chat">
           <div class="ph"><span class="role-name" id="pv-voice">Emma</span>&nbsp;· <span id="pv-lang">English</span></div>
           <div class="pb" id="pv-body"></div>
+        </div>
+        <div class="preview-call hidden" id="pv-call">
+          <div class="pv-call-inner">
+            <div class="pv-call-pulse" aria-hidden="true"></div>
+            <div class="pv-call-dir" id="pv-call-dir">Incoming Call</div>
+            <div class="pv-call-number" id="pv-call-number">+1 (555) 010-2001</div>
+            <div class="pv-call-agent" id="pv-call-agent">Emma · English</div>
+            <div class="pv-call-status" id="pv-call-status">Ringing…</div>
+            <div class="pv-call-transcript" id="pv-call-transcript"></div>
+            <div class="pv-call-actions" id="pv-call-actions">
+              <span class="pv-call-pill decline">Decline</span>
+              <span class="pv-call-pill accept">Accept</span>
+            </div>
+          </div>
         </div>
         <div class="preview-meta">
           <span class="chip" id="pv-role-chip">Role: —</span>

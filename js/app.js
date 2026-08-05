@@ -578,8 +578,33 @@ function editPreviewUpdate(){
   const role = document.getElementById('e-role').value;
   const voice = document.getElementById('e-voice').value;
   const lang = document.getElementById('e-lang').value;
-  document.getElementById('e-preview-voice').textContent = voice.split(' ')[0];
+  const voiceName = voice.split(' ')[0];
+  document.getElementById('e-preview-voice').textContent = voiceName;
   document.getElementById('e-preview-lang').textContent = lang;
+  const chat = document.getElementById('e-preview-chat');
+  const call = document.getElementById('e-preview-call');
+  const label = document.getElementById('e-preview-label');
+  const isCall = isCallAgentRole(role);
+  if(chat) chat.classList.toggle('hidden', isCall);
+  if(call) call.classList.toggle('hidden', !isCall);
+  if(label) label.textContent = isCall ? 'Call Live Preview' : 'Live Preview';
+  if(isCall){
+    const inbound = role === 'Inbound Call Agent';
+    call.classList.toggle('inbound', inbound);
+    call.classList.toggle('outbound', !inbound);
+    document.getElementById('e-call-dir').textContent = inbound ? 'Incoming Call' : 'Outbound Call';
+    document.getElementById('e-call-number').textContent = inbound ? '+1 (555) 010-2001' : '+1 (555) 010-8842';
+    document.getElementById('e-call-agent').textContent = voiceName + ' · ' + lang;
+    document.getElementById('e-call-status').textContent = inbound ? 'Ringing…' : 'Dialing…';
+    document.getElementById('e-call-transcript').textContent = roleIntro[role] || '';
+    const actions = document.getElementById('e-call-actions');
+    if(actions){
+      actions.innerHTML = inbound
+        ? `<span class="pv-call-pill decline">Decline</span><span class="pv-call-pill accept">Accept</span>`
+        : `<span class="pv-call-pill hangup">End call</span>`;
+    }
+    return;
+  }
   const demo = roleDemo[role];
   const a = agents.find(x=>x.id===activeDetailId);
   const kb = a ? answerFromSources(demo.q, a.sources) : null;
@@ -687,10 +712,39 @@ function livePreviewUpdate(){
   const voice = document.getElementById('w-voice').value;
   const lang = document.getElementById('w-lang').value;
   const industry = document.getElementById('w-industry').value;
-  document.getElementById('pv-voice').textContent = voice.split(' ')[0];
+  const voiceName = voice.split(' ')[0];
+  document.getElementById('pv-voice').textContent = voiceName;
   document.getElementById('pv-lang').textContent = lang;
   document.getElementById('pv-role-chip').textContent = 'Role: ' + (role || '—');
   document.getElementById('pv-industry-chip').textContent = 'Industry: ' + industry;
+
+  const chat = document.getElementById('pv-chat');
+  const call = document.getElementById('pv-call');
+  const label = document.getElementById('pv-label');
+  const isCall = isCallAgentRole(role);
+
+  if(chat) chat.classList.toggle('hidden', isCall);
+  if(call) call.classList.toggle('hidden', !isCall);
+  if(label) label.textContent = isCall ? 'Call Live Preview' : 'Live Preview';
+
+  if(isCall){
+    const inbound = role === 'Inbound Call Agent';
+    call.classList.toggle('inbound', inbound);
+    call.classList.toggle('outbound', !inbound);
+    document.getElementById('pv-call-dir').textContent = inbound ? 'Incoming Call' : 'Outbound Call';
+    document.getElementById('pv-call-number').textContent = inbound ? '+1 (555) 010-2001' : '+1 (555) 010-8842';
+    document.getElementById('pv-call-agent').textContent = voiceName + ' · ' + lang;
+    document.getElementById('pv-call-status').textContent = inbound ? 'Ringing…' : 'Dialing…';
+    document.getElementById('pv-call-transcript').textContent = roleIntro[role] || '';
+    const actions = document.getElementById('pv-call-actions');
+    if(actions){
+      actions.innerHTML = inbound
+        ? `<span class="pv-call-pill decline">Decline</span><span class="pv-call-pill accept">Accept</span>`
+        : `<span class="pv-call-pill hangup">End call</span>`;
+    }
+    return;
+  }
+
   const body = document.getElementById('pv-body');
   if(!role){
     body.innerHTML = `<div class="bubble bot">Choose a role on the left to see how your agent will greet customers.</div>`;
@@ -727,12 +781,34 @@ function wizNext(){
 function openDemoModal(){
   const role = selectedRole || 'Customer Service';
   const industry = document.getElementById('w-industry').value;
+  const voice = document.getElementById('w-voice').value.split(' ')[0];
+  const lang = document.getElementById('w-lang').value;
+  document.getElementById('demo-title').textContent = isCallAgentRole(role) ? 'Call Demo' : 'Try Demo';
   document.getElementById('demo-sub').textContent = role + ' · ' + industry;
   const demo = roleDemo[role];
   const body = document.getElementById('demo-body');
-  body.innerHTML = `<div class="bubble bot">${roleIntro[role]}</div>`;
   document.getElementById('demo-overlay').classList.remove('hidden');
 
+  if(isCallAgentRole(role)){
+    const inbound = role === 'Inbound Call Agent';
+    const number = inbound ? '+1 (555) 010-2001' : '+1 (555) 010-8842';
+    body.innerHTML = `
+      <div class="demo-call-preview ${inbound ? 'inbound' : 'outbound'}">
+        <div class="pv-call-pulse"></div>
+        <div class="pv-call-dir">${inbound ? 'Incoming Call' : 'Outbound Call'}</div>
+        <div class="pv-call-number">${number}</div>
+        <div class="pv-call-agent">${escapeHtml(voice)} · ${escapeHtml(lang)}</div>
+        <div class="pv-call-status" id="demo-call-status">${inbound ? 'Connected' : 'Connected'}</div>
+        <div class="pv-call-transcript" id="demo-call-tx">${escapeHtml(roleIntro[role] || '')}</div>
+      </div>`;
+    setTimeout(()=>{
+      const tx = document.getElementById('demo-call-tx');
+      if(tx) tx.textContent = (roleIntro[role] || '') + '\n\nCaller: ' + (demo?.q || '') + '\n\nAgent: ' + (demo?.a || '');
+    }, 900);
+    return;
+  }
+
+  body.innerHTML = `<div class="bubble bot">${roleIntro[role]}</div>`;
   const kb = answerFromSources(demo.q, sources);
   const hasKb = sources.some(s=>s.type==='url' && s.content);
   const userQ = hasKb ? (document.getElementById('w-url')?.dataset.lastQ || demo.q) : demo.q;
