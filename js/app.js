@@ -4,6 +4,8 @@ const roleIntro = {
   "Sales": "Hi there! Ask me about our products, pricing or current offers.",
   "Receptionist": "Hello, thanks for calling! How can I direct you today?",
   "Virtual Receptionist": "Hello! I'm your Virtual Receptionist. How can I help you today?",
+  "Inbound Call Agent": "Thank you for calling. I'm your AI inbound agent — how can I help you today?",
+  "Outbound Call Agent": "Hello, this is your AI outbound agent calling. Do you have a moment to talk?",
   "HR": "Hi! I can help with leave balances, onboarding and HR policies.",
   "Appointment Booking": "Hi! Tell me a date and I'll find you an open slot.",
   "Support": "Hi! Tell me what's going wrong and I'll help troubleshoot.",
@@ -14,11 +16,16 @@ const roleDemo = {
   "Sales": {q:"Do you have any discounts running?", a:"Yes! We currently have 15% off on all new orders this week."},
   "Receptionist": {q:"I'd like to speak to Dr. Williams.", a:"Sure, let me check his availability and connect you right away."},
   "Virtual Receptionist": {q:"I'd like to speak to Dr. Williams.", a:"Sure, let me check his availability and connect you right away."},
+  "Inbound Call Agent": {q:"I need help with my appointment.", a:"Of course — I can look that up. May I have your name and preferred date?"},
+  "Outbound Call Agent": {q:"Who is calling?", a:"This is your GreatAgen outbound agent with a short update. Is now a good time?"},
   "HR": {q:"How many leaves do I have left?", a:"You have 6 annual leaves remaining this year."},
   "Appointment Booking": {q:"Can I book a slot for tomorrow at 5 PM?", a:"Yes, 5 PM tomorrow is available — I've booked it for you."},
   "Support": {q:"My order hasn't arrived yet.", a:"I'm sorry about that — let me check your order status right now."},
   "Task Manager": {q:"Can you create a follow-up task for tomorrow?", a:"Done — I've created a follow-up task for tomorrow and set a reminder."}
 };
+function isCallAgentRole(role){
+  return role === 'Inbound Call Agent' || role === 'Outbound Call Agent';
+}
 
 /* ---------------- STATE ---------------- */
 let currentStep = 1;
@@ -40,6 +47,18 @@ function normalizeAgent(a){
   const voiceMap = {'Ethan (Natural)':'Emma (Natural)', 'Oliver (Friendly)':'Sofia (Friendly)'};
   if(voiceMap[a.voice]) a.voice = voiceMap[a.voice];
   if(!a.voice) a.voice = 'Emma (Natural)';
+  if(!a.voiceCalling){
+    const hasVoice = (a.channels||[]).includes('Voice') || (a.channels||[]).includes('Phone');
+    a.voiceCalling = {
+      inbound: !!hasVoice,
+      outbound: !!hasVoice,
+      demo: true,
+      campaign: { name:'Renewal Campaign', audience:'Expiring in 30 days', total:1250, completed:1024, successful:627, running:false }
+    };
+  }
+  if(!a.voiceCalling.campaign){
+    a.voiceCalling.campaign = { name:'Renewal Campaign', audience:'Expiring in 30 days', total:1250, completed:1024, successful:627, running:false };
+  }
   return a;
 }
 function loadAgents(){
@@ -50,7 +69,7 @@ function loadAgents(){
       if(Array.isArray(parsed) && parsed.length) return parsed.map(normalizeAgent);
     }
   }catch(e){}
-  return defaultAgents.map(a=>({...a, sources:(a.sources||[]).map(s=>({...s})), whatsapp:{...a.whatsapp}}));
+  return defaultAgents.map(a=>({...a, sources:(a.sources||[]).map(s=>({...s})), whatsapp:{...a.whatsapp}, voiceCalling:a.voiceCalling?{...a.voiceCalling, campaign:{...(a.voiceCalling.campaign||{})}}:undefined}));
 }
 function persistAgents(){
   try{ localStorage.setItem(AGENTS_KEY, JSON.stringify(agents)); }catch(e){}
@@ -107,6 +126,10 @@ function persistInbox(){
 let inbox = loadInbox();
 let omniFilter = 'all';
 let activeThreadId = null;
+let pendingCall = null;
+let callTimer = null;
+let callSeconds = 0;
+let campaignTimer = null;
 
 const recentConv = [
   {ch:"WhatsApp", icon:"🟢", name:"John D.", msg:"Order status", time:"2 min ago"},
@@ -127,7 +150,7 @@ window.onload = function(){
 };
 
 /* ---------------- NAV ---------------- */
-const pageTitles = {overview:"Overview", agents:"AI Agents", "agent-detail":"Agent Details", conversations:"Omni Inbox", workflows:"Workflows", knowledge:"Knowledge", integrations:"Integrations", analytics:"Analytics", settings:"Settings"};
+const pageTitles = {overview:"Overview", agents:"AI Agents", "agent-detail":"Agent Details", conversations:"Omni Inbox", voice:"AI Voice", workflows:"Workflows", knowledge:"Knowledge", integrations:"Integrations", analytics:"Analytics", settings:"Settings"};
 function goPage(p){
   document.querySelectorAll('.nav-item').forEach(el=>el.classList.toggle('active', el.dataset.page===p));
   document.querySelectorAll('.page').forEach(el=>el.classList.add('hidden'));
@@ -135,6 +158,7 @@ function goPage(p){
   document.getElementById('topbar-title').textContent = pageTitles[p];
   if(p==='knowledge') renderKnowledge();
   if(p==='conversations') renderConversations();
+  if(p==='voice') renderAIVoicePage();
 }
 
 /* ---------------- OVERVIEW ---------------- */
@@ -165,8 +189,8 @@ function renderConversations(){
       const meta = channelMeta[t.channel] || {icon:'💬', tag:''};
       const last = t.messages[t.messages.length-1];
       const agent = agents.find(a=>a.id===t.agentId);
-      const tagCls = t.channel==='WhatsApp'?'wa':(t.channel==='Web Chat'?'web':'');
-      return `<div class="omni-thread ${t.channel==='WhatsApp'?'wa':''} ${t.id===activeThreadId?'active':''}" onclick="openOmniThread('${t.id}')">
+      const tagCls = t.channel==='WhatsApp'?'wa':(t.channel==='Web Chat'?'web':(t.channel==='Phone'?'phone':''));
+      return `<div class="omni-thread ${t.channel==='WhatsApp'?'wa':''} ${t.channel==='Phone'?'phone':''} ${t.id===activeThreadId?'active':''}" onclick="openOmniThread('${t.id}')">
         <div class="ch-badge">${meta.icon}</div>
         <div style="min-width:0;">
           <div class="name">${escapeHtml(t.customer)}</div>
@@ -547,7 +571,8 @@ function detailTab(t){
   document.querySelectorAll('.detail-tab').forEach(el=>el.classList.toggle('active', el.dataset.tab===t));
   document.querySelectorAll('.detail-tab-panel').forEach(el=>el.classList.remove('active'));
   document.getElementById('tab-'+t).classList.add('active');
-  if(t==='channels'){ renderEmbedPanel(); renderWhatsAppPanel(); }
+  if(t==='channels') renderChannelsPanel();
+  if(t==='voice') renderVoicePanel();
 }
 function editPreviewUpdate(){
   const role = document.getElementById('e-role').value;
@@ -571,6 +596,12 @@ function saveEdit(){
   a.industry = document.getElementById('e-industry').value;
   a.language = document.getElementById('e-lang').value;
   a.voice = document.getElementById('e-voice').value;
+  normalizeAgent(a);
+  if(isCallAgentRole(a.role)){
+    ensureVoiceChannel(a);
+    if(a.role === 'Inbound Call Agent'){ a.voiceCalling.inbound = true; }
+    if(a.role === 'Outbound Call Agent'){ a.voiceCalling.outbound = true; }
+  }
   document.getElementById('detail-name').textContent = a.name;
   document.getElementById('detail-sub').textContent = a.role + ' · ' + a.industry;
   document.getElementById('detail-avatar').textContent = a.name.charAt(0);
@@ -623,6 +654,12 @@ document.getElementById('role-grid').addEventListener('click', e=>{
   const opt = e.target.closest('.role-opt'); if(!opt) return;
   document.querySelectorAll('.role-opt').forEach(el=>el.classList.remove('selected'));
   opt.classList.add('selected'); selectedRole = opt.dataset.role;
+  const hint = document.getElementById('wiz-knowledge-hint');
+  if(hint){
+    hint.textContent = isCallAgentRole(selectedRole)
+      ? 'Train your call agent — add a website URL or upload files. The agent will use this knowledge on inbound and outbound calls.'
+      : 'Add a website URL or upload files so your agent can answer from your content.';
+  }
   livePreviewUpdate();
 });
 
@@ -714,23 +751,37 @@ function closeDemoModal(){ document.getElementById('demo-overlay').classList.add
 /* Create agent */
 function createAgent(){
   const id = genAgentId();
-  const name = document.getElementById('w-name').value || (selectedRole + ' Agent');
+  const role = selectedRole || 'Customer Service';
+  const name = document.getElementById('w-name').value || (role + (isCallAgentRole(role) ? '' : ' Agent'));
+  const isInbound = role === 'Inbound Call Agent';
+  const isOutbound = role === 'Outbound Call Agent';
+  const isCall = isInbound || isOutbound;
+  const channels = isCall ? ['Voice', 'Phone'] : ['Web Chat'];
   const newAgent = {
-    id:id, name:name, role:selectedRole || 'Customer Service',
+    id:id, name:name, role:role,
     industry: document.getElementById('w-industry').value,
     language: document.getElementById('w-lang').value,
     voice: document.getElementById('w-voice').value,
-    status:'Active', channels:['Web Chat'], resolved:'0', rate:'—',
+    status:'Active', channels:channels, resolved:'0', rate:'—',
     sources: sources.slice(),
-    whatsapp:{connected:false, phone:'', autoReply:true, demo:true}
+    whatsapp:{connected:false, phone:'', autoReply:true, demo:true},
+    voiceCalling:{
+      inbound: isInbound || false,
+      outbound: isOutbound || false,
+      demo:true,
+      campaign:{ name: isOutbound ? 'Lead Follow-up' : 'Renewal Campaign', audience: isOutbound ? 'New leads this week' : 'Expiring in 30 days', total:1250, completed:1024, successful:627, running:false }
+    }
   };
+  // Inbound call agents can also do light outbound campaigns if needed later — keep outbound false by default
+  if(isInbound){ newAgent.voiceCalling.inbound = true; newAgent.voiceCalling.outbound = false; }
+  if(isOutbound){ newAgent.voiceCalling.inbound = false; newAgent.voiceCalling.outbound = true; }
   agents.unshift(newAgent);
   persistAgents();
   closeWizard();
   renderAgentsGrid(); renderOverview(); renderKnowledge(); renderIntegrations();
-  showToast('Agent created — copy your embed code');
+  showToast(isCall ? 'Call agent created — upload knowledge & test on Voice' : 'Agent created — copy your embed code');
   openAgentDetail(id);
-  detailTab('channels');
+  detailTab(isCall ? 'voice' : 'channels');
 }
 
 /* ---------------- EMBED CODE + PREVIEW ---------------- */
@@ -744,6 +795,57 @@ function getWidgetScriptUrl(){
 function getEmbedCode(agentId){
   const src = getWidgetScriptUrl();
   return `<script src="${src}" data-agent-id="${agentId}" defer><\/script>`;
+}
+function renderChannelsPanel(){
+  const a = agents.find(x=>x.id===activeDetailId); if(!a) return;
+  const isCall = isCallAgentRole(a.role);
+  const messaging = document.getElementById('channels-messaging');
+  const voiceConnect = document.getElementById('channels-voice-connect');
+  const banner = document.getElementById('channels-demo-banner');
+  if(messaging) messaging.classList.toggle('hidden', isCall);
+  if(voiceConnect) voiceConnect.classList.toggle('hidden', !isCall);
+  if(banner){
+    banner.textContent = isCall
+      ? 'Demo mode — Voice / Phone connect is simulated for client demos. Production needs a telephony provider (e.g. Twilio).'
+      : 'Demo mode — WhatsApp send/receive is simulated for client demos. Production needs Meta Cloud API.';
+  }
+  if(isCall) renderChannelsVoiceConnect();
+  else { renderEmbedPanel(); renderWhatsAppPanel(); }
+}
+function renderChannelsVoiceConnect(){
+  const a = agents.find(x=>x.id===activeDetailId); if(!a) return;
+  normalizeAgent(a);
+  const vc = a.voiceCalling;
+  const lead = document.getElementById('ch-voice-lead');
+  if(lead){
+    lead.textContent = a.role === 'Outbound Call Agent'
+      ? 'This outbound call agent focuses on dialing campaigns and follow-ups — no website chat embed.'
+      : 'This inbound call agent answers your phone line — no website chat embed.';
+  }
+  const inEl = document.getElementById('ch-voice-inbound');
+  const outEl = document.getElementById('ch-voice-outbound');
+  const pill = document.getElementById('ch-voice-status-pill');
+  if(inEl) inEl.checked = !!vc.inbound;
+  if(outEl) outEl.checked = !!vc.outbound;
+  if(pill){
+    if(vc.inbound || vc.outbound){
+      pill.textContent = (vc.inbound && vc.outbound) ? 'Inbound + Outbound' : (vc.inbound ? 'Inbound on' : 'Outbound on');
+      pill.classList.add('on');
+    } else {
+      pill.textContent = 'Off';
+      pill.classList.remove('on');
+    }
+  }
+  const phone = document.getElementById('ch-voice-phone');
+  if(phone) phone.value = a.role === 'Outbound Call Agent' ? '+1 (555) 010-OUT' : '+1 (555) 010-IN';
+  const meta = document.getElementById('ch-voice-meta');
+  if(meta){
+    meta.innerHTML = `Agent ID: <code>${escapeHtml(a.id)}</code><br>Channels: ${(a.channels||[]).map(c=>escapeHtml(c)).join(' · ')} · Voice calling enabled`;
+  }
+  const simIn = document.getElementById('ch-sim-in');
+  const simOut = document.getElementById('ch-sim-out');
+  if(simIn) simIn.classList.toggle('hidden', a.role === 'Outbound Call Agent' && !vc.inbound);
+  if(simOut) simOut.classList.toggle('hidden', a.role === 'Inbound Call Agent' && !vc.outbound);
 }
 function renderEmbedPanel(){
   const a = agents.find(x=>x.id===activeDetailId); if(!a) return;
@@ -889,6 +991,336 @@ function sendWidgetPreview(){
     body.innerHTML += `<div class="bubble bot">${escapeHtml(answer)}</div>`;
     body.scrollTop = body.scrollHeight;
   }, 700);
+}
+
+/* ---------------- AI VOICE FIRST (DEMO) ---------------- */
+const campaignAudiences = {
+  'Renewal Campaign': 'Expiring in 30 days',
+  'Lead Follow-up': 'New leads this week',
+  'Appointment Reminders': 'Appointments tomorrow',
+  'Collections': 'Overdue 15+ days',
+  'Satisfaction Survey': 'Resolved tickets (7 days)'
+};
+function ensureVoiceChannel(a){
+  if(!(a.channels||[]).includes('Voice') && !(a.channels||[]).includes('Phone')){
+    a.channels = [...(a.channels||[]), 'Voice'];
+  }
+}
+function syncCampaignStats(c){
+  const donePct = c.total ? Math.round((c.completed/c.total)*100) : 0;
+  const okPct = c.total ? Math.round((c.successful/c.total)*100) : 0;
+  const pairs = [
+    ['camp-name','vp-camp-name', c.name],
+    ['camp-audience','vp-camp-audience', c.audience],
+    ['camp-total','vp-camp-total', Number(c.total).toLocaleString()],
+  ];
+  pairs.forEach(([a,b,val])=>{
+    const el1 = document.getElementById(a); if(el1) el1.textContent = val;
+    const el2 = document.getElementById(b); if(el2) el2.textContent = val;
+  });
+  const doneHtml = `${Number(c.completed).toLocaleString()} <span class="pct">(${donePct}%)</span>`;
+  const okHtml = `${Number(c.successful).toLocaleString()} <span class="pct">(${okPct}%)</span>`;
+  const donePlain = `${Number(c.completed).toLocaleString()} (${donePct}%)`;
+  const okPlain = `${Number(c.successful).toLocaleString()} (${okPct}%)`;
+  const campDone = document.getElementById('camp-done'); if(campDone) campDone.innerHTML = doneHtml;
+  const campOk = document.getElementById('camp-ok'); if(campOk) campOk.innerHTML = okHtml;
+  const vpDone = document.getElementById('vp-camp-done'); if(vpDone) vpDone.textContent = donePlain;
+  const vpOk = document.getElementById('vp-camp-ok'); if(vpOk) vpOk.textContent = okPlain;
+
+  [['camp-type','camp-start-btn','camp-run-note'],['vp-camp-type','vp-camp-start-btn','vp-camp-run-note']].forEach(([typeId,btnId,noteId])=>{
+    const typeEl = document.getElementById(typeId);
+    if(typeEl){
+      const opts = [...typeEl.options].map(o=>o.value);
+      if(opts.includes(c.name)) typeEl.value = c.name;
+    }
+    const note = document.getElementById(noteId);
+    const btn = document.getElementById(btnId);
+    if(note) note.style.display = c.running ? 'block' : 'none';
+    if(btn){
+      btn.disabled = !!c.running;
+      btn.textContent = c.running ? 'Campaign running…' : 'Start Campaign';
+    }
+  });
+}
+function renderAIVoicePage(){
+  const sel = document.getElementById('vp-agent');
+  if(!sel) return;
+  const prev = sel.value || activeDetailId || agents[0]?.id;
+  sel.innerHTML = agents.map(a=>`<option value="${a.id}">${escapeHtml(a.name)} · ${escapeHtml(a.role)}</option>`).join('') || '<option value="">No agents</option>';
+  if(prev && agents.some(a=>a.id===prev)) sel.value = prev;
+  const a = agents.find(x=>x.id===sel.value);
+  if(a){
+    activeDetailId = a.id;
+    normalizeAgent(a);
+    if(!a.voiceCalling.inbound && !a.voiceCalling.outbound){
+      a.voiceCalling.inbound = true;
+      a.voiceCalling.outbound = true;
+      ensureVoiceChannel(a);
+      persistAgents();
+    }
+    syncCampaignStats(a.voiceCalling.campaign);
+  }
+}
+function onVoicePageAgentChange(){
+  const id = document.getElementById('vp-agent')?.value;
+  if(!id) return;
+  activeDetailId = id;
+  const a = agents.find(x=>x.id===id); if(!a) return;
+  normalizeAgent(a);
+  syncCampaignStats(a.voiceCalling.campaign);
+}
+function simulateIncomingCallFromPage(){
+  const id = document.getElementById('vp-agent')?.value;
+  if(id) activeDetailId = id;
+  simulateIncomingCall();
+}
+function simulateOutboundCallFromPage(){
+  const id = document.getElementById('vp-agent')?.value;
+  if(id) activeDetailId = id;
+  simulateOutboundCall();
+}
+function updateCampaignTypeFromPage(){
+  const id = document.getElementById('vp-agent')?.value;
+  if(id) activeDetailId = id;
+  const a = agents.find(x=>x.id===activeDetailId); if(!a) return;
+  normalizeAgent(a);
+  const name = document.getElementById('vp-camp-type').value;
+  a.voiceCalling.campaign.name = name;
+  a.voiceCalling.campaign.audience = campaignAudiences[name] || 'Selected audience';
+  persistAgents();
+  syncCampaignStats(a.voiceCalling.campaign);
+  if(document.getElementById('camp-type')) document.getElementById('camp-type').value = name;
+}
+function startCallCampaignFromPage(){
+  const id = document.getElementById('vp-agent')?.value;
+  if(id) activeDetailId = id;
+  startCallCampaign();
+}
+function renderVoicePanel(){
+  const a = agents.find(x=>x.id===activeDetailId); if(!a) return;
+  normalizeAgent(a);
+  const vc = a.voiceCalling;
+  const inEl = document.getElementById('voice-inbound-toggle');
+  const outEl = document.getElementById('voice-outbound-toggle');
+  const pill = document.getElementById('voice-status-pill');
+  if(inEl) inEl.checked = !!vc.inbound;
+  if(outEl) outEl.checked = !!vc.outbound;
+  if(pill){
+    if(vc.inbound || vc.outbound){
+      pill.textContent = (vc.inbound && vc.outbound) ? 'Inbound + Outbound' : (vc.inbound ? 'Inbound on' : 'Outbound on');
+      pill.classList.add('on');
+    } else {
+      pill.textContent = 'Off';
+      pill.classList.remove('on');
+    }
+  }
+  syncCampaignStats(vc.campaign);
+}
+function toggleVoiceInbound(on){
+  const a = agents.find(x=>x.id===activeDetailId); if(!a) return;
+  normalizeAgent(a);
+  a.voiceCalling.inbound = !!on;
+  if(on) ensureVoiceChannel(a);
+  persistAgents();
+  renderVoicePanel();
+  if(isCallAgentRole(a.role)) renderChannelsVoiceConnect();
+  renderAgentsGrid();
+  renderIntegrations();
+  showToast(on ? 'Inbound AI answering enabled (demo)' : 'Inbound disabled');
+}
+function toggleVoiceOutbound(on){
+  const a = agents.find(x=>x.id===activeDetailId); if(!a) return;
+  normalizeAgent(a);
+  a.voiceCalling.outbound = !!on;
+  if(on) ensureVoiceChannel(a);
+  persistAgents();
+  renderVoicePanel();
+  if(isCallAgentRole(a.role)) renderChannelsVoiceConnect();
+  renderAgentsGrid();
+  renderIntegrations();
+  showToast(on ? 'Outbound calling enabled (demo)' : 'Outbound disabled');
+}
+function updateCampaignType(){
+  const a = agents.find(x=>x.id===activeDetailId); if(!a) return;
+  normalizeAgent(a);
+  const name = document.getElementById('camp-type').value;
+  a.voiceCalling.campaign.name = name;
+  a.voiceCalling.campaign.audience = campaignAudiences[name] || 'Selected audience';
+  persistAgents();
+  syncCampaignStats(a.voiceCalling.campaign);
+}
+function randomPhone(){
+  return '+1 (555) ' + String(100 + Math.floor(Math.random()*900)) + '-' + String(1000 + Math.floor(Math.random()*9000));
+}
+function openCallOverlay(dir, phone, agentName){
+  document.getElementById('call-dir-label').textContent = dir === 'outbound' ? 'Outbound Call' : 'Incoming Call';
+  document.getElementById('call-number').textContent = phone;
+  document.getElementById('call-agent-name').textContent = agentName || 'GreatAgen';
+  document.getElementById('call-actions').classList.remove('hidden');
+  document.getElementById('call-live').classList.add('hidden');
+  document.getElementById('call-transcript').textContent = '';
+  document.getElementById('call-timer').textContent = '00:00';
+  document.getElementById('call-overlay').classList.remove('hidden');
+}
+function simulateIncomingCall(){
+  const a = agents.find(x=>x.id===activeDetailId); if(!a) return;
+  normalizeAgent(a);
+  if(!a.voiceCalling.inbound){
+    a.voiceCalling.inbound = true;
+    ensureVoiceChannel(a);
+    persistAgents();
+    renderVoicePanel();
+  }
+  const phone = randomPhone();
+  const names = ['Sarah M.','John D.','David L.','Michael M.','Robert R.'];
+  pendingCall = {
+    dir:'inbound',
+    phone,
+    customer: names[Math.floor(Math.random()*names.length)],
+    agentId: a.id,
+    question: roleDemo[a.role]?.q || 'I need help with my account.'
+  };
+  openCallOverlay('inbound', phone, a.name);
+  showToast('Incoming call ringing (demo)');
+}
+function simulateOutboundCall(){
+  const a = agents.find(x=>x.id===activeDetailId); if(!a) return;
+  normalizeAgent(a);
+  if(!a.voiceCalling.outbound){
+    a.voiceCalling.outbound = true;
+    ensureVoiceChannel(a);
+    persistAgents();
+    renderVoicePanel();
+  }
+  const phone = randomPhone();
+  pendingCall = {
+    dir:'outbound',
+    phone,
+    customer: 'Lead Prospect',
+    agentId: a.id,
+    question: a.voiceCalling.campaign?.name || 'Follow-up call'
+  };
+  openCallOverlay('outbound', phone, a.name);
+  // Auto-connect outbound after brief ring for demo polish
+  setTimeout(()=>{ if(pendingCall && pendingCall.dir==='outbound') acceptIncomingCall(); }, 900);
+  showToast('Outbound call dialing (demo)');
+}
+function declineIncomingCall(){
+  document.getElementById('call-overlay').classList.add('hidden');
+  if(pendingCall){
+    logPhoneCall(pendingCall, false, 'Call declined');
+    pendingCall = null;
+  }
+  showToast('Call declined');
+}
+function acceptIncomingCall(){
+  if(!pendingCall) return;
+  document.getElementById('call-actions').classList.add('hidden');
+  document.getElementById('call-live').classList.remove('hidden');
+  const a = agents.find(x=>x.id===pendingCall.agentId);
+  const greet = roleIntro[a?.role] || 'Hi! Thanks for calling. How can I help you today?';
+  const kb = a ? answerFromSources(pendingCall.question, a.sources) : { answer:'', cite:null };
+  const reply = kb.cite ? kb.answer : (roleDemo[a?.role]?.a || "I've noted your request and will take care of it.");
+  const transcript = document.getElementById('call-transcript');
+  transcript.textContent = 'Connecting…';
+  callSeconds = 0;
+  clearInterval(callTimer);
+  callTimer = setInterval(()=>{
+    callSeconds++;
+    const mm = String(Math.floor(callSeconds/60)).padStart(2,'0');
+    const ss = String(callSeconds%60).padStart(2,'0');
+    document.getElementById('call-timer').textContent = mm + ':' + ss;
+  }, 1000);
+  setTimeout(()=>{ transcript.textContent = 'AI: ' + greet; }, 400);
+  setTimeout(()=>{ transcript.textContent = 'Caller: ' + pendingCall.question; }, 1600);
+  setTimeout(()=>{ transcript.textContent = 'AI: ' + reply; pendingCall.answer = reply; }, 2800);
+}
+function endActiveCall(){
+  clearInterval(callTimer); callTimer = null;
+  document.getElementById('call-overlay').classList.add('hidden');
+  if(pendingCall){
+    logPhoneCall(pendingCall, true, pendingCall.answer || 'Call completed');
+    pendingCall = null;
+  }
+  showToast('Call ended — logged in Omni inbox');
+}
+function logPhoneCall(call, answered, summary){
+  const thread = {
+    id: 'th_ph_' + Math.random().toString(36).slice(2,8),
+    channel: 'Phone',
+    customer: call.customer || 'Caller',
+    phone: call.phone,
+    agentId: call.agentId,
+    updatedAt: Date.now(),
+    messages: [
+      { from:'customer', text: (call.dir==='outbound' ? 'Outbound: ' : 'Inbound: ') + (call.question || 'Phone call'), at: Date.now()-2000 },
+      { from:'agent', text: answered ? summary : 'Missed / declined (demo)', at: Date.now() }
+    ]
+  };
+  inbox.unshift(thread);
+  persistInbox();
+  persistAgents();
+  activeThreadId = thread.id;
+}
+function startCallCampaign(){
+  const a = agents.find(x=>x.id===activeDetailId); if(!a) return;
+  normalizeAgent(a);
+  if(!a.voiceCalling.outbound){
+    a.voiceCalling.outbound = true;
+    ensureVoiceChannel(a);
+  }
+  const c = a.voiceCalling.campaign;
+  if(c.running){ showToast('Campaign already running'); return; }
+  c.running = true;
+  c.completed = Math.min(c.total, c.completed);
+  persistAgents();
+  renderVoicePanel();
+  syncCampaignStats(c);
+  showToast('Call campaign started (demo)');
+
+  let ticks = 0;
+  clearInterval(campaignTimer);
+  campaignTimer = setInterval(()=>{
+    ticks++;
+    c.completed = Math.min(c.total, c.completed + Math.ceil(Math.random()*8));
+    c.successful = Math.min(c.completed, c.successful + Math.ceil(Math.random()*4));
+    // Log a few sample calls into inbox
+    if(ticks % 2 === 0){
+      const phone = randomPhone();
+      inbox.unshift({
+        id: 'th_ph_' + Math.random().toString(36).slice(2,8),
+        channel:'Phone',
+        customer: 'Campaign Contact',
+        phone,
+        agentId: a.id,
+        updatedAt: Date.now(),
+        messages:[
+          {from:'customer', text:'Outbound campaign call: ' + c.name, at:Date.now()-1000},
+          {from:'agent', text: Math.random()>0.45 ? 'Contact reached — action completed.' : 'No answer — will retry later.', at:Date.now()}
+        ]
+      });
+      persistInbox();
+    }
+    persistAgents();
+    if(activeDetailId===a.id){
+      renderVoicePanel();
+      if(document.getElementById('page-voice') && !document.getElementById('page-voice').classList.contains('hidden')){
+        syncCampaignStats(a.voiceCalling.campaign);
+      }
+    }
+    if(c.completed >= c.total || ticks >= 12){
+      clearInterval(campaignTimer);
+      campaignTimer = null;
+      c.running = false;
+      c.completed = c.total;
+      persistAgents();
+      if(activeDetailId===a.id){
+        renderVoicePanel();
+        syncCampaignStats(a.voiceCalling.campaign);
+      }
+      showToast('Campaign completed (demo)');
+    }
+  }, 900);
 }
 
 /* ---------------- TOAST ---------------- */

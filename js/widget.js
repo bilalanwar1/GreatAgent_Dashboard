@@ -8,6 +8,8 @@
     Sales: 'Hi there! Ask me about our products, pricing or current offers.',
     Receptionist: 'Hello, thanks for calling! How can I direct you today?',
     'Virtual Receptionist': "Hello! I'm your Virtual Receptionist. How can I help you today?",
+    'Inbound Call Agent': "Thank you for calling. I'm your AI inbound agent — how can I help you today?",
+    'Outbound Call Agent': 'Hello, this is your AI outbound agent calling. Do you have a moment to talk?',
     HR: 'Hi! I can help with leave balances, onboarding and HR policies.',
     'Appointment Booking': "Hi! Tell me a date and I'll find you an open slot.",
     Support: "Hi! Tell me what's going wrong and I'll help troubleshoot.",

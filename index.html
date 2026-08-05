@@ -26,6 +26,10 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5h16v11H8l-4 4V5z"/></svg>
       Conversations
     </div>
+    <div class="nav-item" data-page="voice" onclick="goPage('voice')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>
+      AI Voice
+    </div>
     <div class="nav-item" data-page="workflows" onclick="goPage('workflows')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="2.3"/><circle cx="18" cy="6" r="2.3"/><circle cx="12" cy="18" r="2.3"/><path d="M8 7l3 9M16 7l-3 9"/></svg>
       Workflows
@@ -125,7 +129,9 @@
                 <div class="field"><label>Agent name</label><input type="text" id="e-name"></div>
                 <div class="field"><label>Role</label>
                   <select id="e-role" onchange="editPreviewUpdate()">
-                    <option>Customer Service</option><option>Sales</option><option>Virtual Receptionist</option>
+                    <option>Customer Service</option><option>Sales</option>
+                    <option>Inbound Call Agent</option><option>Outbound Call Agent</option>
+                    <option>Virtual Receptionist</option>
                     <option>Receptionist</option><option>HR</option><option>Appointment Booking</option>
                     <option>Support</option><option>Task Manager</option>
                   </select>
@@ -162,78 +168,199 @@
         </div>
 
         <div class="detail-tab-panel" id="tab-channels">
-          <div class="demo-banner">Demo mode — WhatsApp send/receive is simulated for client demos. Production needs Meta Cloud API.</div>
-          <div class="grid-2" style="margin-bottom:16px;">
-            <div class="card">
-              <div class="card-head"><h3>Website embed</h3></div>
-              <p class="hint-text" style="margin-top:0;">Paste this code before <code>&lt;/body&gt;</code> on your website. A chat widget will appear for this agent.</p>
-              <div class="field" style="margin-top:14px;">
-                <label>Embed code</label>
-                <textarea id="embed-code" class="embed-code" readonly rows="4"></textarea>
-              </div>
-              <div class="embed-actions">
-                <button class="btn btn-primary btn-sm" onclick="copyEmbedCode()">Copy embed code</button>
-                <a class="btn btn-outline btn-sm" id="embed-preview-link" href="widget-demo.html" target="_blank" rel="noopener">Open live preview</a>
-              </div>
-              <div class="embed-meta" id="embed-meta"></div>
-            </div>
-            <div class="card">
-              <div class="card-head"><h3>Widget preview</h3></div>
-              <p class="hint-text" style="margin-top:0;">How the chat bubble looks on your site.</p>
-              <div class="widget-preview-frame" id="widget-preview-frame">
-                <div class="wp-site">
-                  <div class="wp-bar"></div>
-                  <div class="wp-lines"><span></span><span></span><span></span></div>
+          <div class="demo-banner" id="channels-demo-banner">Demo mode — WhatsApp send/receive is simulated for client demos. Production needs Meta Cloud API.</div>
+
+          <!-- Call agents: Voice / Phone connect (no website chat embed) -->
+          <div id="channels-voice-connect" class="hidden">
+            <div class="voice-enable-bar card">
+              <div class="voice-enable-left">
+                <div class="voice-logo">📞</div>
+                <div>
+                  <h3>Voice connect <span class="soon-pill" style="background:#EEF0FF;color:var(--indigo);">Demo</span></h3>
+                  <p class="hint-text" style="margin:4px 0 0;" id="ch-voice-lead">Connect this call agent to inbound answering and outbound dialing.</p>
                 </div>
-                <button type="button" class="wp-bubble" id="wp-bubble" aria-label="Open chat">💬</button>
-                <div class="wp-chat hidden" id="wp-chat">
-                  <div class="wp-chat-head">
-                    <div>
-                      <div class="wp-chat-title" id="wp-chat-title">Agent</div>
-                      <div class="wp-chat-sub" id="wp-chat-sub">Online</div>
-                    </div>
-                    <button type="button" class="wp-chat-close" onclick="toggleWidgetPreview(false)">✕</button>
-                  </div>
-                  <div class="wp-chat-body" id="wp-chat-body"></div>
-                  <div class="wp-chat-foot">
-                    <input type="text" id="wp-chat-input" placeholder="Type a message…" onkeydown="if(event.key==='Enter')sendWidgetPreview()">
-                    <button type="button" class="btn btn-primary btn-sm" onclick="sendWidgetPreview()">Send</button>
-                  </div>
+              </div>
+              <div class="voice-enable-actions">
+                <label class="voice-toggle"><input type="checkbox" id="ch-voice-inbound" onchange="toggleVoiceInbound(this.checked)"> Inbound</label>
+                <label class="voice-toggle"><input type="checkbox" id="ch-voice-outbound" onchange="toggleVoiceOutbound(this.checked)"> Outbound</label>
+                <span class="wa-status" id="ch-voice-status-pill">Off</span>
+              </div>
+            </div>
+            <div class="grid-2" style="margin-top:16px;">
+              <div class="card">
+                <div class="card-head"><h3>Phone number (demo)</h3></div>
+                <p class="hint-text" style="margin-top:0;">Demo DID for this call agent. Production would provision a real number via Twilio or similar.</p>
+                <div class="field" style="margin-top:12px;">
+                  <label>Assigned number</label>
+                  <input type="text" id="ch-voice-phone" value="+1 (555) 010-VOICE" readonly>
+                </div>
+                <div class="embed-meta" id="ch-voice-meta" style="margin-top:12px;"></div>
+              </div>
+              <div class="card">
+                <div class="card-head"><h3>Test calls</h3></div>
+                <p class="hint-text" style="margin-top:0;">Simulate live voice sessions — results appear as Phone threads in the omni inbox.</p>
+                <div class="embed-actions" style="margin-top:14px;">
+                  <button class="btn btn-primary btn-sm" id="ch-sim-in" onclick="simulateIncomingCall()">Simulate incoming call</button>
+                  <button class="btn btn-outline btn-sm" id="ch-sim-out" onclick="simulateOutboundCall()">Simulate outbound call</button>
+                </div>
+                <div class="embed-actions" style="margin-top:8px;">
+                  <button class="btn btn-ghost btn-sm" onclick="detailTab('voice')">Open Voice tab</button>
+                  <button class="btn btn-ghost btn-sm" onclick="goPage('voice')">Open AI Voice</button>
+                  <button class="btn btn-ghost btn-sm" onclick="goPage('conversations')">Open omni inbox</button>
                 </div>
               </div>
             </div>
           </div>
-          <div class="card wa-connect-card">
-            <div class="wa-connect-top">
-              <div class="wa-logo">WA</div>
-              <div>
-                <h3>WhatsApp <span class="soon-pill" style="background:#E8F8EF;color:#128C7E;">Demo</span></h3>
-                <p class="hint-text" style="margin:4px 0 0;">Connect a demo number so this omni agent can send &amp; receive WhatsApp messages in the inbox.</p>
+
+          <!-- Messaging agents: website embed + WhatsApp -->
+          <div id="channels-messaging">
+            <div class="grid-2" style="margin-bottom:16px;">
+              <div class="card">
+                <div class="card-head"><h3>Website embed</h3></div>
+                <p class="hint-text" style="margin-top:0;">Paste this code before <code>&lt;/body&gt;</code> on your website. A chat widget will appear for this agent.</p>
+                <div class="field" style="margin-top:14px;">
+                  <label>Embed code</label>
+                  <textarea id="embed-code" class="embed-code" readonly rows="4"></textarea>
+                </div>
+                <div class="embed-actions">
+                  <button class="btn btn-primary btn-sm" onclick="copyEmbedCode()">Copy embed code</button>
+                  <a class="btn btn-outline btn-sm" id="embed-preview-link" href="widget-demo.html" target="_blank" rel="noopener">Open live preview</a>
+                </div>
+                <div class="embed-meta" id="embed-meta"></div>
               </div>
-              <div class="wa-status" id="wa-status-pill">Disconnected</div>
+              <div class="card">
+                <div class="card-head"><h3>Widget preview</h3></div>
+                <p class="hint-text" style="margin-top:0;">How the chat bubble looks on your site.</p>
+                <div class="widget-preview-frame" id="widget-preview-frame">
+                  <div class="wp-site">
+                    <div class="wp-bar"></div>
+                    <div class="wp-lines"><span></span><span></span><span></span></div>
+                  </div>
+                  <button type="button" class="wp-bubble" id="wp-bubble" aria-label="Open chat">💬</button>
+                  <div class="wp-chat hidden" id="wp-chat">
+                    <div class="wp-chat-head">
+                      <div>
+                        <div class="wp-chat-title" id="wp-chat-title">Agent</div>
+                        <div class="wp-chat-sub" id="wp-chat-sub">Online</div>
+                      </div>
+                      <button type="button" class="wp-chat-close" onclick="toggleWidgetPreview(false)">✕</button>
+                    </div>
+                    <div class="wp-chat-body" id="wp-chat-body"></div>
+                    <div class="wp-chat-foot">
+                      <input type="text" id="wp-chat-input" placeholder="Type a message…" onkeydown="if(event.key==='Enter')sendWidgetPreview()">
+                      <button type="button" class="btn btn-primary btn-sm" onclick="sendWidgetPreview()">Send</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div class="row-2" style="margin-top:16px;">
-              <div class="field" style="margin-bottom:0;">
-                <label>Business phone (demo)</label>
-                <input type="text" id="wa-phone" placeholder="+1 555 010 2001">
+            <div class="card wa-connect-card">
+              <div class="wa-connect-top">
+                <div class="wa-logo">WA</div>
+                <div>
+                  <h3>WhatsApp <span class="soon-pill" style="background:#E8F8EF;color:#128C7E;">Demo</span></h3>
+                  <p class="hint-text" style="margin:4px 0 0;">Connect a demo number so this omni agent can send &amp; receive WhatsApp messages in the inbox.</p>
+                </div>
+                <div class="wa-status" id="wa-status-pill">Disconnected</div>
               </div>
-              <div class="field" style="margin-bottom:0;">
-                <label>Auto-reply with AI</label>
-                <select id="wa-autoreply">
-                  <option value="on">On — reply from knowledge</option>
-                  <option value="off">Off — manual only</option>
-                </select>
+              <div class="row-2" style="margin-top:16px;">
+                <div class="field" style="margin-bottom:0;">
+                  <label>Business phone (demo)</label>
+                  <input type="text" id="wa-phone" placeholder="+1 555 010 2001">
+                </div>
+                <div class="field" style="margin-bottom:0;">
+                  <label>Auto-reply with AI</label>
+                  <select id="wa-autoreply">
+                    <option value="on">On — reply from knowledge</option>
+                    <option value="off">Off — manual only</option>
+                  </select>
+                </div>
               </div>
-            </div>
-            <div class="embed-actions" style="margin-top:14px;">
-              <button class="btn btn-primary btn-sm" id="wa-connect-btn" onclick="toggleWhatsAppDemo()">Connect WhatsApp</button>
-              <button class="btn btn-outline btn-sm" onclick="simulateWhatsAppIncoming()">Simulate incoming message</button>
-              <button class="btn btn-ghost btn-sm" onclick="goPage('conversations')">Open omni inbox</button>
+              <div class="embed-actions" style="margin-top:14px;">
+                <button class="btn btn-primary btn-sm" id="wa-connect-btn" onclick="toggleWhatsAppDemo()">Connect WhatsApp</button>
+                <button class="btn btn-outline btn-sm" onclick="simulateWhatsAppIncoming()">Simulate incoming message</button>
+                <button class="btn btn-ghost btn-sm" onclick="goPage('conversations')">Open omni inbox</button>
+              </div>
             </div>
           </div>
         </div>
         <div class="detail-tab-panel" id="tab-voice">
-          <div class="placeholder-card"><b>Inbound &amp; outbound calling<span class="soon-pill">Coming next</span></b>Enable AI phone answering and run outbound call campaigns from here.</div>
+          <div class="demo-banner">Demo mode — AI Voice First is simulated for client demos. Production needs a telephony provider (e.g. Twilio).</div>
+          <div class="voice-enable-bar card">
+            <div class="voice-enable-left">
+              <div class="voice-logo">📞</div>
+              <div>
+                <h3>AI Voice First <span class="soon-pill" style="background:#EEF0FF;color:var(--indigo);">Demo</span></h3>
+                <p class="hint-text" style="margin:4px 0 0;">Enable inbound answering and outbound campaigns for this agent.</p>
+              </div>
+            </div>
+            <div class="voice-enable-actions">
+              <label class="voice-toggle"><input type="checkbox" id="voice-inbound-toggle" onchange="toggleVoiceInbound(this.checked)"> Inbound</label>
+              <label class="voice-toggle"><input type="checkbox" id="voice-outbound-toggle" onchange="toggleVoiceOutbound(this.checked)"> Outbound</label>
+              <span class="wa-status" id="voice-status-pill">Off</span>
+            </div>
+          </div>
+          <div class="grid-2" style="margin-top:16px;">
+            <div class="card">
+              <div class="card-head"><h3>Inbound Calls</h3></div>
+              <ul class="voice-feature-list">
+                <li>Answers incoming calls</li>
+                <li>Understands natural language</li>
+                <li>Identifies the caller</li>
+                <li>Speaks with natural human-like voice</li>
+                <li>Executes business actions</li>
+                <li>Transfers to human when needed</li>
+                <li>Summarizes &amp; updates systems</li>
+              </ul>
+              <div class="embed-actions" style="margin-top:14px;">
+                <button class="btn btn-primary btn-sm" onclick="simulateIncomingCall()">Simulate incoming call</button>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-head"><h3>Outbound Calls</h3></div>
+              <ul class="voice-feature-list">
+                <li>Sales campaigns</li>
+                <li>Lead follow-ups</li>
+                <li>Appointment scheduling</li>
+                <li>Reminders</li>
+                <li>Collections</li>
+                <li>Satisfaction surveys</li>
+                <li>Subscription renewals</li>
+                <li>Post-purchase follow-ups</li>
+              </ul>
+              <div class="embed-actions" style="margin-top:14px;">
+                <button class="btn btn-outline btn-sm" onclick="simulateOutboundCall()">Simulate outbound call</button>
+              </div>
+            </div>
+          </div>
+          <div class="card" style="margin-top:16px;">
+            <div class="card-head">
+              <h3>Call Campaign</h3>
+              <span class="soon-pill" style="background:#EEF0FF;color:var(--indigo); margin-left:0;">Demo</span>
+            </div>
+            <div class="campaign-grid">
+              <div class="campaign-stat"><span class="cl">Campaign</span><b id="camp-name">Renewal Campaign</b></div>
+              <div class="campaign-stat"><span class="cl">Audience</span><b id="camp-audience">Expiring in 30 days</b></div>
+              <div class="campaign-stat"><span class="cl">Total Calls</span><b id="camp-total">1,250</b></div>
+              <div class="campaign-stat"><span class="cl">Completed</span><b id="camp-done">1,024 <span class="pct">(82%)</span></b></div>
+              <div class="campaign-stat"><span class="cl">Successful</span><b id="camp-ok">627 <span class="pct">(50%)</span></b></div>
+            </div>
+            <div class="field" style="margin-top:14px; max-width:320px;">
+              <label>Campaign type</label>
+              <select id="camp-type" onchange="updateCampaignType()">
+                <option>Renewal Campaign</option>
+                <option>Lead Follow-up</option>
+                <option>Appointment Reminders</option>
+                <option>Collections</option>
+                <option>Satisfaction Survey</option>
+              </select>
+            </div>
+            <div class="embed-actions" style="margin-top:14px;">
+              <button class="btn btn-primary btn-sm" id="camp-start-btn" onclick="startCallCampaign()">Start Campaign</button>
+              <button class="btn btn-ghost btn-sm" onclick="goPage('conversations')">View call logs in inbox</button>
+            </div>
+            <p class="hint-text" id="camp-run-note" style="display:none;">Campaign running (demo) — call results appear in Omni inbox as Phone threads.</p>
+          </div>
         </div>
         <div class="detail-tab-panel" id="tab-knowledge">
           <div class="card">
@@ -285,6 +412,7 @@
             <div class="omni-filters" id="omni-filters">
               <button class="omni-filter active" data-filter="all" onclick="setOmniFilter('all')">All</button>
               <button class="omni-filter" data-filter="WhatsApp" onclick="setOmniFilter('WhatsApp')">WhatsApp</button>
+              <button class="omni-filter" data-filter="Phone" onclick="setOmniFilter('Phone')">Phone</button>
               <button class="omni-filter" data-filter="Web Chat" onclick="setOmniFilter('Web Chat')">Web</button>
               <button class="omni-filter" data-filter="Email" onclick="setOmniFilter('Email')">Email</button>
               <button class="omni-filter" data-filter="Instagram" onclick="setOmniFilter('Instagram')">IG</button>
@@ -305,6 +433,89 @@
               </div>
             </div>
           </section>
+        </div>
+      </div>
+
+      <!-- AI VOICE / AI CALL AGENT -->
+      <div id="page-voice" class="page hidden">
+        <div class="page-header voice-page-header">
+          <div>
+            <h2 class="voice-page-title"><span class="voice-step-badge">3</span> AI Voice First</h2>
+            <p>Inbound answering, outbound campaigns, and call agents — demo workspace for client presentations.</p>
+          </div>
+          <div class="field voice-agent-field">
+            <label>Call agent</label>
+            <select id="vp-agent" onchange="onVoicePageAgentChange()"></select>
+          </div>
+        </div>
+        <div class="demo-banner">Demo mode — calls are simulated. Production needs a telephony provider (e.g. Twilio).</div>
+        <div class="voice-first-layout">
+          <div class="voice-col voice-col-inbound">
+            <div class="voice-col-body">
+              <h3>Inbound Calls</h3>
+              <ul class="voice-check-list">
+                <li>Answers incoming calls</li>
+                <li>Understands natural language</li>
+                <li>Identifies the caller</li>
+                <li>Speaks with natural human-like voice</li>
+                <li>Executes business actions</li>
+                <li>Transfers to human when needed</li>
+                <li>Summarizes &amp; updates systems</li>
+              </ul>
+            </div>
+            <button class="btn btn-primary voice-col-btn" onclick="simulateIncomingCallFromPage()">Simulate incoming call</button>
+          </div>
+
+          <div class="voice-phone-wrap" aria-hidden="true">
+            <div class="voice-phone-orb">
+              <span class="ring r1"></span>
+              <span class="ring r2"></span>
+              <span class="ring r3"></span>
+              <div class="voice-phone-core">
+                <svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>
+              </div>
+            </div>
+          </div>
+
+          <div class="voice-col voice-col-outbound">
+            <div class="voice-col-body">
+              <h3>Outbound Calls</h3>
+              <ul class="voice-check-list">
+                <li>Sales campaigns</li>
+                <li>Lead follow-ups</li>
+                <li>Appointment scheduling</li>
+                <li>Reminders</li>
+                <li>Collections</li>
+                <li>Satisfaction surveys</li>
+                <li>Subscription renewals</li>
+                <li>Post-purchase follow-ups</li>
+              </ul>
+            </div>
+            <button class="btn btn-outline voice-col-btn" onclick="simulateOutboundCallFromPage()">Simulate outbound call</button>
+          </div>
+
+          <div class="voice-campaign-card">
+            <h3>Call Campaign</h3>
+            <div class="voice-campaign-rows">
+              <div class="vcr"><span>Campaign</span><b id="vp-camp-name">Renewal Campaign</b></div>
+              <div class="vcr"><span>Audience</span><b id="vp-camp-audience">Expiring in 30 days</b></div>
+              <div class="vcr"><span>Total Calls</span><b id="vp-camp-total">1,250</b></div>
+              <div class="vcr"><span>Completed</span><b id="vp-camp-done">1,024 (82%)</b></div>
+              <div class="vcr"><span>Successful</span><b id="vp-camp-ok">627 (50%)</b></div>
+            </div>
+            <div class="field voice-camp-type-field">
+              <label>Campaign type</label>
+              <select id="vp-camp-type" onchange="updateCampaignTypeFromPage()">
+                <option>Renewal Campaign</option>
+                <option>Lead Follow-up</option>
+                <option>Appointment Reminders</option>
+                <option>Collections</option>
+                <option>Satisfaction Survey</option>
+              </select>
+            </div>
+            <button class="btn btn-primary voice-campaign-btn" id="vp-camp-start-btn" onclick="startCallCampaignFromPage()">Start Campaign</button>
+            <p class="hint-text" id="vp-camp-run-note" style="display:none;">Campaign running (demo) — results appear in Omni inbox as Phone threads.</p>
+          </div>
         </div>
       </div>
 
@@ -407,6 +618,8 @@
             <div class="role-grid" id="role-grid">
               <div class="role-opt" data-role="Customer Service"><div class="ic">🎧</div><div class="t">Customer Service</div></div>
               <div class="role-opt" data-role="Sales"><div class="ic">💼</div><div class="t">Sales</div></div>
+              <div class="role-opt" data-role="Inbound Call Agent"><div class="ic">📞</div><div class="t">Inbound Call Agent</div></div>
+              <div class="role-opt" data-role="Outbound Call Agent"><div class="ic">📲</div><div class="t">Outbound Call Agent</div></div>
               <div class="role-opt" data-role="Virtual Receptionist"><div class="ic">🏢</div><div class="t">Virtual Receptionist</div></div>
               <div class="role-opt" data-role="Task Manager"><div class="ic">✅</div><div class="t">Task Manager</div></div>
               <div class="role-opt" data-role="HR"><div class="ic">🧑‍💼</div><div class="t">HR</div></div>
@@ -419,7 +632,7 @@
 
         <!-- STEP 2: KNOWLEDGE -->
         <div class="wiz-panel" id="wiz-2">
-          <p style="font-size:13px; color:var(--muted); margin-top:0;">Add a website URL or upload files so your agent can answer from your content.</p>
+          <p style="font-size:13px; color:var(--muted); margin-top:0;" id="wiz-knowledge-hint">Add a website URL or upload files so your agent can answer from your content.</p>
           <div class="field">
             <label>Website URL</label>
             <div class="url-row">
@@ -494,6 +707,25 @@
     </div>
     <div class="demo-body" id="demo-body"></div>
     <div class="demo-foot"><button class="btn btn-outline btn-sm" onclick="closeDemoModal()">Close preview</button></div>
+  </div>
+</div>
+
+<!-- Incoming call modal (demo) -->
+<div id="call-overlay" class="hidden">
+  <div class="call-modal">
+    <div class="call-pulse"></div>
+    <div class="call-label" id="call-dir-label">Incoming Call</div>
+    <div class="call-number" id="call-number">+1 (555) 123-4567</div>
+    <div class="call-agent" id="call-agent-name">GreatAgen</div>
+    <div class="call-actions" id="call-actions">
+      <button class="call-btn decline" onclick="declineIncomingCall()">Decline</button>
+      <button class="call-btn accept" onclick="acceptIncomingCall()">Accept</button>
+    </div>
+    <div class="call-live hidden" id="call-live">
+      <div class="call-timer" id="call-timer">00:00</div>
+      <p class="call-transcript" id="call-transcript"></p>
+      <button class="btn btn-outline btn-sm" onclick="endActiveCall()">End call</button>
+    </div>
   </div>
 </div>
 
