@@ -11,7 +11,8 @@
 <body>
 
 <div id="screen-app">
-  <aside class="sidebar">
+  <div class="nav-backdrop" id="nav-backdrop" onclick="closeMobileNav()" aria-hidden="true"></div>
+  <aside class="sidebar" id="app-sidebar">
     <div class="brand"><span class="dot"></span> GreatAgen</div>
     <div class="nav-group-label">Platform</div>
     <div class="nav-item active" data-page="overview" onclick="goPage('overview')">
@@ -59,8 +60,13 @@
 
   <div class="main">
     <div class="topbar">
-      <h1 id="topbar-title">Overview</h1>
-      <button class="btn btn-primary" style="width:auto; padding:9px 16px;" onclick="openWizard()">+ Create Agent</button>
+      <div class="topbar-left">
+        <button type="button" class="nav-toggle" id="nav-toggle" onclick="toggleMobileNav()" aria-label="Open menu">
+          <span></span><span></span><span></span>
+        </button>
+        <h1 id="topbar-title">Overview</h1>
+      </div>
+      <button class="btn btn-primary topbar-create" onclick="openWizard()">+ Create Agent</button>
     </div>
 
     <div class="page-content">

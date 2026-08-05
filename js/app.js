@@ -147,6 +147,8 @@ window.onload = function(){
   renderOverview(); renderAgentsGrid(); renderConversations(); renderKnowledge(); renderIntegrations();
   const bubble = document.getElementById('wp-bubble');
   if(bubble) bubble.addEventListener('click', ()=>toggleWidgetPreview(true));
+  document.addEventListener('keydown', e=>{ if(e.key==='Escape') closeMobileNav(); });
+  window.addEventListener('resize', ()=>{ if(window.innerWidth > 900) closeMobileNav(); });
 };
 
 /* ---------------- NAV ---------------- */
@@ -156,9 +158,25 @@ function goPage(p){
   document.querySelectorAll('.page').forEach(el=>el.classList.add('hidden'));
   document.getElementById('page-'+p).classList.remove('hidden');
   document.getElementById('topbar-title').textContent = pageTitles[p];
+  closeMobileNav();
   if(p==='knowledge') renderKnowledge();
-  if(p==='conversations') renderConversations();
+  if(p==='conversations'){
+    document.getElementById('omni-shell')?.classList.remove('thread-open');
+    renderConversations();
+  }
   if(p==='voice') renderAIVoicePage();
+}
+function toggleMobileNav(){
+  document.body.classList.toggle('nav-open');
+}
+function closeMobileNav(){
+  document.body.classList.remove('nav-open');
+}
+function closeOmniThreadMobile(){
+  activeThreadId = null;
+  document.getElementById('omni-shell')?.classList.remove('thread-open');
+  showOmniEmpty();
+  document.querySelectorAll('.omni-thread').forEach(el=>el.classList.remove('active'));
 }
 
 /* ---------------- OVERVIEW ---------------- */
@@ -222,6 +240,7 @@ function setOmniFilter(f){
 function showOmniEmpty(){
   document.getElementById('omni-empty')?.classList.remove('hidden');
   document.getElementById('omni-active')?.classList.add('hidden');
+  document.getElementById('omni-shell')?.classList.remove('thread-open');
 }
 function openOmniThread(id, keepOnly){
   const t = inbox.find(x=>x.id===id); if(!t) return;
@@ -232,10 +251,12 @@ function openOmniThread(id, keepOnly){
   const agent = agents.find(a=>a.id===t.agentId);
   document.getElementById('omni-empty').classList.add('hidden');
   document.getElementById('omni-active').classList.remove('hidden');
+  document.getElementById('omni-shell')?.classList.add('thread-open');
   const meta = channelMeta[t.channel] || {icon:'💬'};
   document.getElementById('omni-chat-head').innerHTML = `
+    <button type="button" class="omni-back" onclick="closeOmniThreadMobile()" aria-label="Back to threads">←</button>
     <div class="ch-badge">${meta.icon}</div>
-    <div>
+    <div style="min-width:0;">
       <div class="title">${escapeHtml(t.customer)}</div>
       <div class="sub">${escapeHtml(t.channel)}${t.phone?' · '+escapeHtml(t.phone):''}</div>
     </div>
@@ -745,6 +766,7 @@ function removeDetailSource(i){
 
 /* ---------------- WIZARD ---------------- */
 function openWizard(){
+  closeMobileNav();
   currentStep=1; sources=[]; selectedRole=null;
   document.querySelectorAll('.role-opt').forEach(el=>el.classList.remove('selected'));
   document.getElementById('source-list').innerHTML='';
