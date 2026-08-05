@@ -321,6 +321,14 @@ function normalizeUrl(raw){
   try { return new URL(u).href; } catch(e){ return null; }
 }
 function parseHtmlToText(html){
+  // Jina / plain text responses are already readable
+  const trimmed = (html||'').trim();
+  if(trimmed && !/^<!DOCTYPE|^<html[\s>]/i.test(trimmed) && !trimmed.includes('<body')){
+    const lines = trimmed.split(/\n/).map(l=>l.trim()).filter(Boolean);
+    const title = (lines[0]||'Website').replace(/^#+\s*/,'').slice(0,120);
+    const content = trimmed.replace(/\n{3,}/g,'\n\n').slice(0, 50000);
+    return { title, content };
+  }
   const doc = new DOMParser().parseFromString(html, 'text/html');
   doc.querySelectorAll('script,style,noscript,svg,iframe,nav,footer,header').forEach(el=>el.remove());
   const title = (doc.querySelector('title')?.textContent || '').trim();
@@ -332,29 +340,105 @@ function parseHtmlToText(html){
   if(title && !text.startsWith(title)) text = title + '\n\n' + text;
   return { title: title || 'Website', content: text.slice(0, 50000) };
 }
+function sleep(ms){ return new Promise(r=>setTimeout(r, ms)); }
+function getExtractCache(url){
+  try{
+    const raw = sessionStorage.getItem('greatagen_extract_' + url);
+    if(!raw) return null;
+    const data = JSON.parse(raw);
+    if(data && data.content && data.content.length > 40) return data;
+  }catch(e){}
+  return null;
+}
+function setExtractCache(url, data){
+  try{ sessionStorage.setItem('greatagen_extract_' + url, JSON.stringify(data)); }catch(e){}
+}
+async function fetchViaProxy(buildUrl, url){
+  const ctrl = new AbortController();
+  const timer = setTimeout(()=>ctrl.abort(), 22000);
+  try{
+    const res = await fetch(buildUrl(url), {
+      signal: ctrl.signal,
+      headers: { 'Accept': 'text/html,text/plain,application/json,*/*' }
+    });
+    clearTimeout(timer);
+    if(res.status === 429){
+      const err = new Error('Rate limited (429)');
+      err.status = 429;
+      throw err;
+    }
+    if(!res.ok){
+      const err = new Error('Website returned ' + res.status);
+      err.status = res.status;
+      throw err;
+    }
+    const ct = (res.headers.get('content-type') || '').toLowerCase();
+    if(ct.includes('application/json')){
+      const json = await res.json();
+      const html = json.contents || json.content || json.data || json.body || '';
+      if(typeof html === 'string') return html;
+      throw new Error('No readable content found');
+    }
+    return await res.text();
+  }catch(e){
+    clearTimeout(timer);
+    throw e;
+  }
+}
 async function extractWebsiteContent(url){
+  const cached = getExtractCache(url);
+  if(cached) return { ...cached, status: 'ready' };
+
+  // Multiple free readers/proxies — try until one works (429 = skip / retry later)
   const proxies = [
+    (u)=>`https://r.jina.ai/${u}`,
+    (u)=>`https://api.allorigins.win/get?url=${encodeURIComponent(u)}`,
     (u)=>`https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
-    (u)=>`https://corsproxy.io/?${encodeURIComponent(u)}`
+    (u)=>`https://corsproxy.io/?url=${encodeURIComponent(u)}`,
+    (u)=>`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
+    (u)=>`https://thingproxy.freeboard.io/fetch/${u}`
   ];
+
   let lastErr = 'Could not reach website';
-  for(const build of proxies){
-    const ctrl = new AbortController();
-    const timer = setTimeout(()=>ctrl.abort(), 20000);
+  let hit429 = false;
+
+  for(let i = 0; i < proxies.length; i++){
     try{
-      const res = await fetch(build(url), { signal: ctrl.signal });
-      clearTimeout(timer);
-      if(!res.ok){ lastErr = 'Website returned ' + res.status; continue; }
-      const html = await res.text();
+      const html = await fetchViaProxy(proxies[i], url);
       if(!html || html.length < 40){ lastErr = 'No readable content found'; continue; }
       const parsed = parseHtmlToText(html);
       if(!parsed.content || parsed.content.length < 40){ lastErr = 'No readable content found'; continue; }
       const wordCount = parsed.content.split(/\s+/).filter(Boolean).length;
-      return { title: parsed.title, content: parsed.content, wordCount, status: 'ready' };
+      const data = { title: parsed.title, content: parsed.content, wordCount, status: 'ready' };
+      setExtractCache(url, data);
+      return data;
     }catch(e){
-      clearTimeout(timer);
+      if(e.status === 429 || /429|rate limit/i.test(e.message||'')){
+        hit429 = true;
+        lastErr = 'Rate limited — trying another source…';
+        await sleep(400 + i * 200); // brief backoff before next proxy
+        continue;
+      }
       lastErr = e.name === 'AbortError' ? 'Request timed out' : (e.message || 'Extraction failed');
     }
+  }
+
+  if(hit429){
+    // One delayed retry pass — public proxies often recover after a short wait
+    await sleep(1600);
+    for(let i = 0; i < proxies.length; i++){
+      try{
+        const html = await fetchViaProxy(proxies[i], url);
+        if(!html || html.length < 40) continue;
+        const parsed = parseHtmlToText(html);
+        if(!parsed.content || parsed.content.length < 40) continue;
+        const wordCount = parsed.content.split(/\s+/).filter(Boolean).length;
+        const data = { title: parsed.title, content: parsed.content, wordCount, status: 'ready' };
+        setExtractCache(url, data);
+        return data;
+      }catch(e){ /* keep trying */ }
+    }
+    throw new Error('Website extract is temporarily rate-limited (429). Wait a few seconds and try again, or upload a file instead.');
   }
   throw new Error(lastErr);
 }
@@ -682,8 +766,8 @@ document.getElementById('role-grid').addEventListener('click', e=>{
   const hint = document.getElementById('wiz-knowledge-hint');
   if(hint){
     hint.textContent = isCallAgentRole(selectedRole)
-      ? 'Train your call agent — add a website URL or upload files. The agent will use this knowledge on inbound and outbound calls.'
-      : 'Add a website URL or upload files so your agent can answer from your content.';
+      ? 'Train your call agent — add a website URL or upload files. If Extract hits a rate limit, wait a few seconds and retry, or upload a file instead.'
+      : 'Add a website URL or upload files so your agent can answer from your content. If Extract hits a rate limit, wait a few seconds and try again — or upload a PDF/DOC instead.';
   }
   livePreviewUpdate();
 });
