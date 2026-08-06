@@ -7,6 +7,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/styles.css">
+<script src="js/auth.js"></script>
+<script>Auth.requireAuth('signup.html');</script>
 </head>
 <body>
 
@@ -52,9 +54,11 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 00-.15-1.45l2-1.55-2-3.46-2.36.95a7 7 0 00-2.5-1.45L13.5 2h-3l-.5 2.54a7 7 0 00-2.5 1.45L5.15 5 3.15 8.46l2 1.55a7 7 0 000 2.9l-2 1.55 2 3.46 2.35-.95a7 7 0 002.5 1.45L10.5 22h3l.5-2.54a7 7 0 002.5-1.45l2.36.95 2-3.46-2-1.55c.1-.47.15-.96.15-1.45z"/></svg>
       Settings
     </div>
-    <div class="sidebar-foot">
-      <div class="avatar">J</div>
-      <div class="who">John Smith<span>John's Clinic</span></div>
+    <div class="sidebar-foot-wrap">
+      <button type="button" class="sidebar-foot" id="user-menu-btn" onclick="openProfilePage()" aria-label="Open profile settings">
+        <div class="avatar" id="user-avatar">J</div>
+        <div class="who"><strong id="user-name">User</strong><span id="user-email">email@example.com</span></div>
+      </button>
     </div>
   </aside>
 
@@ -73,7 +77,7 @@
 
       <!-- OVERVIEW -->
       <div id="page-overview" class="page">
-        <div class="page-header"><div><h2>Welcome back, John 👋</h2><p>Here's how your AI Agents are performing.</p></div></div>
+        <div class="page-header"><div><h2 id="overview-welcome">Welcome back 👋</h2><p>Here's how your AI Agents are performing.</p></div></div>
         <div class="stat-grid">
           <div class="stat-card"><div class="label">Total Conversations</div><div class="value" id="kpi-conv">0</div><div class="delta up">+18.6% vs last month</div></div>
           <div class="stat-card"><div class="label">AI Resolved</div><div class="value">73.5%</div><div class="delta up">resolution rate</div></div>
@@ -604,10 +608,105 @@
         </div>
       </div>
 
+      <!-- PROFILE -->
+      <div id="page-profile" class="page hidden">
+        <div class="page-header">
+          <div>
+            <h2>Profile settings</h2>
+            <p>Manage your photo, name, email, password, and account details.</p>
+          </div>
+          <button type="button" class="btn btn-primary btn-sm" onclick="handleLogout()">Log out</button>
+        </div>
+
+        <div class="profile-layout">
+          <div class="card profile-photo-card">
+            <div class="card-head"><h3>Profile picture</h3></div>
+            <div class="profile-photo-row">
+              <div class="profile-photo-preview" id="profile-avatar-preview">J</div>
+              <div>
+                <p class="hint-text" style="margin-top:0;">Upload a square photo (JPG or PNG). Stored on this device for the demo.</p>
+                <div class="embed-actions" style="margin-top:12px;">
+                  <label class="btn btn-primary btn-sm" style="cursor:pointer;">
+                    Change photo
+                    <input type="file" id="profile-avatar-input" accept="image/*" hidden onchange="onProfileAvatarSelected(event)">
+                  </label>
+                  <button type="button" class="btn btn-ghost btn-sm" onclick="removeProfileAvatar()">Remove</button>
+                </div>
+                <p class="auth-error hidden" id="profile-avatar-error" style="margin-top:12px;"></p>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><h3>Account details</h3></div>
+            <form id="profile-details-form" onsubmit="saveProfileDetails(event)">
+              <div class="field">
+                <label for="profile-name">Full name / username</label>
+                <input type="text" id="profile-name" autocomplete="name" required>
+              </div>
+              <div class="field">
+                <label for="profile-email">Email</label>
+                <input type="email" id="profile-email" autocomplete="email" required>
+              </div>
+              <div class="field">
+                <label for="profile-company">Company / workspace</label>
+                <input type="text" id="profile-company" autocomplete="organization" placeholder="Optional">
+              </div>
+              <p class="auth-error hidden" id="profile-details-error"></p>
+              <button type="submit" class="btn btn-primary btn-sm" id="profile-details-btn">Save profile</button>
+            </form>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><h3>Change password</h3></div>
+            <form id="profile-password-form" onsubmit="saveProfilePassword(event)">
+              <div class="field">
+                <label for="profile-current-password">Current password</label>
+                <div class="password-wrap">
+                  <input type="password" id="profile-current-password" autocomplete="current-password" required>
+                  <button type="button" class="password-toggle" onclick="Auth.togglePassword('profile-current-password', this)" aria-label="Show password" title="Show password"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg></button>
+                </div>
+              </div>
+              <div class="field">
+                <label for="profile-new-password">New password</label>
+                <div class="password-wrap">
+                  <input type="password" id="profile-new-password" autocomplete="new-password" placeholder="At least 6 characters" required>
+                  <button type="button" class="password-toggle" onclick="Auth.togglePassword('profile-new-password', this)" aria-label="Show password" title="Show password"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg></button>
+                </div>
+              </div>
+              <div class="field">
+                <label for="profile-confirm-password">Confirm new password</label>
+                <div class="password-wrap">
+                  <input type="password" id="profile-confirm-password" autocomplete="new-password" required>
+                  <button type="button" class="password-toggle" onclick="Auth.togglePassword('profile-confirm-password', this)" aria-label="Show password" title="Show password"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg></button>
+                </div>
+              </div>
+              <p class="auth-error hidden" id="profile-password-error"></p>
+              <button type="submit" class="btn btn-primary btn-sm" id="profile-password-btn">Update password</button>
+            </form>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><h3>Account</h3></div>
+            <p class="hint-text" style="margin-top:0;">Signed in as <strong id="profile-meta-email">—</strong></p>
+            <p class="hint-text" id="profile-meta-created" style="margin-bottom:14px;">Member since —</p>
+            <button type="button" class="btn btn-danger btn-sm" onclick="handleLogout()">Log out of GreatAgen</button>
+          </div>
+        </div>
+      </div>
+
       <!-- SETTINGS -->
       <div id="page-settings" class="page hidden">
         <div class="page-header"><div><h2>Settings</h2><p>Workspace and account preferences.</p></div></div>
-        <div class="placeholder-card"><b>Workspace settings</b>Billing, team members and security settings will appear here.</div>
+        <div class="card" style="max-width:480px;">
+          <div class="card-head"><h3>Account</h3></div>
+          <p class="hint-text" style="margin-top:0;">Update your photo, name, email, and password in Profile settings.</p>
+          <div class="embed-actions" style="margin-top:14px;">
+            <button type="button" class="btn btn-primary btn-sm" onclick="openProfilePage()">Open profile settings</button>
+            <button type="button" class="btn btn-outline btn-sm" onclick="handleLogout()">Log out</button>
+          </div>
+        </div>
+        <div class="placeholder-card" style="margin-top:16px;"><b>Workspace settings</b>Billing, team members and security settings will appear here.</div>
       </div>
 
     </div>

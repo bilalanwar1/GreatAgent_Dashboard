@@ -142,17 +142,181 @@ let activeDetailId = null;
 
 /* ---------------- INIT ---------------- */
 window.onload = function(){
+  applyAuthUI();
   persistAgents();
   persistInbox();
   renderOverview(); renderAgentsGrid(); renderConversations(); renderKnowledge(); renderIntegrations();
   const bubble = document.getElementById('wp-bubble');
   if(bubble) bubble.addEventListener('click', ()=>toggleWidgetPreview(true));
-  document.addEventListener('keydown', e=>{ if(e.key==='Escape') closeMobileNav(); });
+  document.addEventListener('keydown', e=>{
+    if(e.key==='Escape') closeMobileNav();
+  });
   window.addEventListener('resize', ()=>{ if(window.innerWidth > 900) closeMobileNav(); });
 };
 
+function applyAuthUI(){
+  if(typeof Auth === 'undefined') return;
+  const user = Auth.getCurrentUser();
+  if(!user) return;
+  const nameEl = document.getElementById('user-name');
+  const emailEl = document.getElementById('user-email');
+  const avatarEl = document.getElementById('user-avatar');
+  const welcomeEl = document.getElementById('overview-welcome');
+  if(nameEl) nameEl.textContent = user.name || 'User';
+  if(emailEl) emailEl.textContent = user.email || '';
+  setAvatarElement(avatarEl, user);
+  if(welcomeEl) welcomeEl.textContent = 'Welcome back, ' + Auth.firstName(user.name) + ' 👋';
+}
+function setAvatarElement(el, user){
+  if(!el) return;
+  if(user.avatar){
+    el.classList.add('has-photo');
+    el.style.backgroundImage = 'url(' + user.avatar + ')';
+    el.textContent = '';
+  } else {
+    el.classList.remove('has-photo');
+    el.style.backgroundImage = '';
+    el.textContent = Auth.initials(user.name);
+  }
+}
+function openProfilePage(){
+  closeMobileNav();
+  goPage('profile');
+  fillProfileForm();
+}
+function fillProfileForm(){
+  if(typeof Auth === 'undefined') return;
+  const user = Auth.getCurrentUser();
+  if(!user) return;
+  const name = document.getElementById('profile-name');
+  const email = document.getElementById('profile-email');
+  const company = document.getElementById('profile-company');
+  const preview = document.getElementById('profile-avatar-preview');
+  const metaEmail = document.getElementById('profile-meta-email');
+  const metaCreated = document.getElementById('profile-meta-created');
+  if(name) name.value = user.name || '';
+  if(email) email.value = user.email || '';
+  if(company) company.value = user.company || '';
+  setAvatarElement(preview, user);
+  if(metaEmail) metaEmail.textContent = user.email || '—';
+  if(metaCreated){
+    metaCreated.textContent = user.createdAt
+      ? 'Member since ' + new Date(user.createdAt).toLocaleDateString(undefined, { year:'numeric', month:'short', day:'numeric' })
+      : 'Member since —';
+  }
+  ['profile-details-error','profile-password-error','profile-avatar-error'].forEach(id=>{
+    const el = document.getElementById(id);
+    if(el){ el.classList.add('hidden'); el.textContent = ''; }
+  });
+  const pw = document.getElementById('profile-password-form');
+  if(pw) pw.reset();
+}
+function saveProfileDetails(e){
+  e.preventDefault();
+  const err = document.getElementById('profile-details-error');
+  const btn = document.getElementById('profile-details-btn');
+  err.classList.add('hidden');
+  btn.disabled = true;
+  const result = Auth.updateProfile({
+    name: document.getElementById('profile-name').value,
+    email: document.getElementById('profile-email').value,
+    company: document.getElementById('profile-company').value
+  });
+  btn.disabled = false;
+  if(!result.ok){
+    err.textContent = result.error;
+    err.classList.remove('hidden');
+    return;
+  }
+  applyAuthUI();
+  fillProfileForm();
+  showToast('Profile updated');
+}
+function saveProfilePassword(e){
+  e.preventDefault();
+  const err = document.getElementById('profile-password-error');
+  const btn = document.getElementById('profile-password-btn');
+  err.classList.add('hidden');
+  btn.disabled = true;
+  const result = Auth.changePassword({
+    currentPassword: document.getElementById('profile-current-password').value,
+    newPassword: document.getElementById('profile-new-password').value,
+    confirmPassword: document.getElementById('profile-confirm-password').value
+  });
+  btn.disabled = false;
+  if(!result.ok){
+    err.textContent = result.error;
+    err.classList.remove('hidden');
+    return;
+  }
+  document.getElementById('profile-password-form').reset();
+  showToast('Password updated');
+}
+function onProfileAvatarSelected(e){
+  const file = e.target.files && e.target.files[0];
+  e.target.value = '';
+  const err = document.getElementById('profile-avatar-error');
+  if(err){ err.classList.add('hidden'); err.textContent = ''; }
+  if(!file) return;
+  if(!file.type.startsWith('image/')){
+    if(err){ err.textContent = 'Choose an image file'; err.classList.remove('hidden'); }
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = function(){
+    resizeImageDataUrl(reader.result, 256).then(dataUrl=>{
+      const result = Auth.updateAvatar(dataUrl);
+      if(!result.ok){
+        if(err){ err.textContent = result.error; err.classList.remove('hidden'); }
+        return;
+      }
+      applyAuthUI();
+      fillProfileForm();
+      showToast('Profile picture updated');
+    }).catch(()=>{
+      if(err){ err.textContent = 'Could not process image'; err.classList.remove('hidden'); }
+    });
+  };
+  reader.onerror = function(){
+    if(err){ err.textContent = 'Could not read image'; err.classList.remove('hidden'); }
+  };
+  reader.readAsDataURL(file);
+}
+function removeProfileAvatar(){
+  const result = Auth.updateAvatar('');
+  if(!result.ok){
+    showToast(result.error || 'Could not remove photo');
+    return;
+  }
+  applyAuthUI();
+  fillProfileForm();
+  showToast('Profile picture removed');
+}
+function resizeImageDataUrl(dataUrl, maxSize){
+  return new Promise((resolve, reject)=>{
+    const img = new Image();
+    img.onload = function(){
+      const scale = Math.min(1, maxSize / Math.max(img.width, img.height));
+      const w = Math.max(1, Math.round(img.width * scale));
+      const h = Math.max(1, Math.round(img.height * scale));
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, w, h);
+      resolve(canvas.toDataURL('image/jpeg', 0.85));
+    };
+    img.onerror = reject;
+    img.src = dataUrl;
+  });
+}
+function handleLogout(){
+  if(typeof Auth === 'undefined') return;
+  Auth.logout();
+  location.replace(Auth.PATHS.login);
+}
+
 /* ---------------- NAV ---------------- */
-const pageTitles = {overview:"Overview", agents:"AI Agents", "agent-detail":"Agent Details", conversations:"Omni Inbox", voice:"AI Voice", workflows:"Workflows", knowledge:"Knowledge", integrations:"Integrations", analytics:"Analytics", settings:"Settings"};
+const pageTitles = {overview:"Overview", agents:"AI Agents", "agent-detail":"Agent Details", conversations:"Omni Inbox", voice:"AI Voice", workflows:"Workflows", knowledge:"Knowledge", integrations:"Integrations", analytics:"Analytics", settings:"Settings", profile:"Profile"};
 function goPage(p){
   document.querySelectorAll('.nav-item').forEach(el=>el.classList.toggle('active', el.dataset.page===p));
   document.querySelectorAll('.page').forEach(el=>el.classList.add('hidden'));
@@ -165,6 +329,7 @@ function goPage(p){
     renderConversations();
   }
   if(p==='voice') renderAIVoicePage();
+  if(p==='profile') fillProfileForm();
 }
 function toggleMobileNav(){
   document.body.classList.toggle('nav-open');
