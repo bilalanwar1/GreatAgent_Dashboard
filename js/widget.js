@@ -2,7 +2,6 @@
 (function () {
   'use strict';
 
-  const AGENTS_KEY = 'greatagen_agents';
   const roleIntro = {
     'Customer Service': "Hi! I'm your Customer Service assistant. How can I help you today?",
     Sales: 'Hi there! Ask me about our products, pricing or current offers.',
@@ -22,11 +21,16 @@
 
   function loadAgent(id) {
     try {
-      const list = JSON.parse(localStorage.getItem(AGENTS_KEY) || '[]');
-      return list.find((a) => a.id === id) || null;
-    } catch (e) {
-      return null;
-    }
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (!key || key.indexOf('greatagen_agents') !== 0) continue;
+        const list = JSON.parse(localStorage.getItem(key) || '[]');
+        if (!Array.isArray(list)) continue;
+        const found = list.find((a) => a.id === id);
+        if (found) return found;
+      }
+    } catch (e) {}
+    return null;
   }
 
   function answerFromSources(question, sources) {

@@ -79,10 +79,10 @@
       <div id="page-overview" class="page">
         <div class="page-header"><div><h2 id="overview-welcome">Welcome back 👋</h2><p>Here's how your AI Agents are performing.</p></div></div>
         <div class="stat-grid">
-          <div class="stat-card"><div class="label">Total Conversations</div><div class="value" id="kpi-conv">0</div><div class="delta up">+18.6% vs last month</div></div>
-          <div class="stat-card"><div class="label">AI Resolved</div><div class="value">73.5%</div><div class="delta up">resolution rate</div></div>
-          <div class="stat-card"><div class="label">Avg. Response Time</div><div class="value">1.2s</div><div class="delta up">-28% vs last month</div></div>
-          <div class="stat-card"><div class="label">CSAT Score</div><div class="value">4.8/5</div><div class="delta up">+0.6 vs last month</div></div>
+          <div class="stat-card"><div class="label">Total Conversations</div><div class="value" id="kpi-conv">0</div><div class="delta" id="kpi-conv-delta">No conversations yet — create an agent to get started</div></div>
+          <div class="stat-card"><div class="label">AI Resolved</div><div class="value" id="kpi-resolved">—</div><div class="delta" id="kpi-resolved-delta">waiting for activity</div></div>
+          <div class="stat-card"><div class="label">Avg. Response Time</div><div class="value" id="kpi-avg">—</div><div class="delta" id="kpi-avg-delta">—</div></div>
+          <div class="stat-card"><div class="label">CSAT Score</div><div class="value" id="kpi-csat">—</div><div class="delta" id="kpi-csat-delta">—</div></div>
         </div>
         <div class="grid-2">
           <div class="card">
@@ -91,11 +91,7 @@
           </div>
           <div class="card">
             <div class="card-head"><h3>Channel Distribution</h3></div>
-            <div class="bar-row"><span class="bar-label">Chat</span><div class="bar-track"><div class="bar-fill" style="width:40%"></div></div><span class="bar-pct">40%</span></div>
-            <div class="bar-row"><span class="bar-label">WhatsApp</span><div class="bar-track"><div class="bar-fill" style="width:25%"></div></div><span class="bar-pct">25%</span></div>
-            <div class="bar-row"><span class="bar-label">Phone</span><div class="bar-track"><div class="bar-fill" style="width:15%"></div></div><span class="bar-pct">15%</span></div>
-            <div class="bar-row"><span class="bar-label">Email</span><div class="bar-track"><div class="bar-fill" style="width:10%"></div></div><span class="bar-pct">10%</span></div>
-            <div class="bar-row"><span class="bar-label">Others</span><div class="bar-track"><div class="bar-fill" style="width:10%"></div></div><span class="bar-pct">10%</span></div>
+            <div id="channel-distribution"></div>
           </div>
         </div>
         <div class="card" style="margin-top:16px;">
@@ -416,8 +412,8 @@
           <div class="stat-grid">
             <div class="stat-card"><div class="label">Conversations Handled</div><div class="value" id="an-conv">—</div></div>
             <div class="stat-card"><div class="label">Resolution Rate</div><div class="value" id="an-rate">—</div></div>
-            <div class="stat-card"><div class="label">Avg. Response Time</div><div class="value">1.2s</div></div>
-            <div class="stat-card"><div class="label">CSAT Score</div><div class="value">4.7/5</div></div>
+            <div class="stat-card"><div class="label">Avg. Response Time</div><div class="value" id="an-avg">—</div></div>
+            <div class="stat-card"><div class="label">CSAT Score</div><div class="value" id="an-csat">—</div></div>
           </div>
         </div>
       </div>
@@ -595,15 +591,15 @@
       <div id="page-analytics" class="page hidden">
         <div class="page-header"><div><h2>Analytics</h2><p>Monitor performance and improve over time.</p></div></div>
         <div class="stat-grid">
-          <div class="stat-card"><div class="label">Total Conversations</div><div class="value">0</div><div class="delta up">+18.6%</div></div>
-          <div class="stat-card"><div class="label">AI Resolved</div><div class="value">73.5%</div><div class="delta up">resolution rate</div></div>
-          <div class="stat-card"><div class="label">Conversion Rate</div><div class="value">18.6%</div><div class="delta up">+12%</div></div>
-          <div class="stat-card"><div class="label">CSAT Score</div><div class="value">4.8/5</div><div class="delta up">+0.6</div></div>
+          <div class="stat-card"><div class="label">Total Conversations</div><div class="value" id="an-page-conv">0</div><div class="delta" id="an-page-conv-delta">Your workspace</div></div>
+          <div class="stat-card"><div class="label">AI Resolved</div><div class="value" id="an-page-resolved">—</div><div class="delta">resolution rate</div></div>
+          <div class="stat-card"><div class="label">Activity Score</div><div class="value" id="an-page-conversion">—</div><div class="delta">based on agents &amp; chats</div></div>
+          <div class="stat-card"><div class="label">CSAT Score</div><div class="value" id="an-page-csat">—</div><div class="delta">from resolved chats</div></div>
         </div>
         <div class="card">
           <div class="card-head"><h3>AI Recommendations</h3></div>
-          <div style="font-size:13px; line-height:2; color:var(--text);">
-            • Add more knowledge about shipping policies<br>• Improve response time for product support<br>• Consider automation for refund requests
+          <div id="an-page-tips" style="font-size:13px; line-height:2; color:var(--text);">
+            • Create your first AI agent<br>• Add a website URL under Knowledge<br>• Connect WhatsApp or Voice to start conversations
           </div>
         </div>
       </div>

@@ -33,14 +33,20 @@ let selectedRole = null;
 let sources = [];
 function genAgentId(){ return 'agt_' + Math.random().toString(36).slice(2,10); }
 
-const AGENTS_KEY = 'greatagen_agents';
-const INBOX_KEY = 'greatagen_inbox';
-const defaultAgents = [
-  {id:'agt_support01', name:"Customer Support Agent", role:"Customer Service", industry:"E-commerce", language:"English", voice:"Emma (Natural)", status:"Active", channels:["Web Chat","WhatsApp","Email"], resolved:"12,456", rate:"92%", sources:[{type:'file',name:'faq.pdf'}], whatsapp:{connected:true, phone:'+1 555 010 2001', autoReply:true, demo:true}},
-  {id:'agt_sales001', name:"Sales Assistant", role:"Sales", industry:"Real Estate", language:"English", voice:"Sofia (Friendly)", status:"Active", channels:["Web Chat","WhatsApp"], resolved:"8,743", rate:"88%", sources:[], whatsapp:{connected:true, phone:'+1 555 010 2002', autoReply:true, demo:true}},
-  {id:'agt_recept01', name:"Virtual Receptionist", role:"Virtual Receptionist", industry:"Clinic", language:"English", voice:"James (Professional)", status:"Active", channels:["Voice","SMS","Web Chat"], resolved:"6,231", rate:"90%", sources:[], whatsapp:{connected:false, phone:'', autoReply:true, demo:true}},
-  {id:'agt_collect1', name:"Collections Agent", role:"Support", industry:"Finance", language:"English", voice:"Marcus (Calm)", status:"Active", channels:["Voice","Email"], resolved:"3,123", rate:"85%", sources:[], whatsapp:{connected:false, phone:'', autoReply:true, demo:true}},
-];
+const AGENTS_KEY_PREFIX = 'greatagen_agents_';
+const INBOX_KEY_PREFIX = 'greatagen_inbox_';
+
+function currentUserId(){
+  if(typeof Auth === 'undefined') return null;
+  return Auth.getCurrentUser()?.id || null;
+}
+function agentsStorageKey(uid){
+  return AGENTS_KEY_PREFIX + (uid || 'guest');
+}
+function inboxStorageKey(uid){
+  return INBOX_KEY_PREFIX + (uid || 'guest');
+}
+
 function normalizeAgent(a){
   if(!a.whatsapp) a.whatsapp = {connected: (a.channels||[]).includes('WhatsApp'), phone: a.whatsapp?.phone || '', autoReply:true, demo:true};
   if(a.whatsapp.connected && !(a.channels||[]).includes('WhatsApp')) a.channels = [...(a.channels||[]), 'WhatsApp'];
@@ -53,28 +59,35 @@ function normalizeAgent(a){
       inbound: !!hasVoice,
       outbound: !!hasVoice,
       demo: true,
-      campaign: { name:'Renewal Campaign', audience:'Expiring in 30 days', total:1250, completed:1024, successful:627, running:false }
+      campaign: { name:'Renewal Campaign', audience:'Expiring in 30 days', total:0, completed:0, successful:0, running:false }
     };
   }
   if(!a.voiceCalling.campaign){
-    a.voiceCalling.campaign = { name:'Renewal Campaign', audience:'Expiring in 30 days', total:1250, completed:1024, successful:627, running:false };
+    a.voiceCalling.campaign = { name:'Renewal Campaign', audience:'Expiring in 30 days', total:0, completed:0, successful:0, running:false };
   }
+  if(a.resolved == null) a.resolved = '0';
+  if(a.rate == null) a.rate = '—';
   return a;
 }
 function loadAgents(){
+  const uid = currentUserId();
+  if(!uid) return [];
   try{
-    const raw = localStorage.getItem(AGENTS_KEY);
-    if(raw){
+    const key = agentsStorageKey(uid);
+    const raw = localStorage.getItem(key);
+    if(raw !== null){
       const parsed = JSON.parse(raw);
-      if(Array.isArray(parsed) && parsed.length) return parsed.map(normalizeAgent);
+      if(Array.isArray(parsed)) return parsed.map(normalizeAgent);
     }
   }catch(e){}
-  return defaultAgents.map(a=>({...a, sources:(a.sources||[]).map(s=>({...s})), whatsapp:{...a.whatsapp}, voiceCalling:a.voiceCalling?{...a.voiceCalling, campaign:{...(a.voiceCalling.campaign||{})}}:undefined}));
+  return [];
 }
 function persistAgents(){
-  try{ localStorage.setItem(AGENTS_KEY, JSON.stringify(agents)); }catch(e){}
+  const uid = currentUserId();
+  if(!uid) return;
+  try{ localStorage.setItem(agentsStorageKey(uid), JSON.stringify(agents)); }catch(e){}
 }
-let agents = loadAgents();
+let agents = [];
 
 const channelMeta = {
   'WhatsApp': {icon:'🟢', tag:'wa'},
@@ -86,66 +99,81 @@ const channelMeta = {
   'SMS': {icon:'💬', tag:''}
 };
 function defaultInbox(){
-  const a1 = agents[0]?.id || 'agt_support01';
-  const a2 = agents[1]?.id || 'agt_sales001';
-  return [
-    {id:'th_wa_1', channel:'WhatsApp', customer:'John D.', phone:'+1 555 014 2211', agentId:a1, updatedAt:Date.now()-120000, messages:[
-      {from:'customer', text:'Hi, I need my order status', at:Date.now()-180000},
-      {from:'agent', text:"Sure — please share your order number and I'll check right away.", at:Date.now()-150000},
-      {from:'customer', text:'Order #48291', at:Date.now()-120000}
-    ]},
-    {id:'th_web_1', channel:'Web Chat', customer:'Robert R.', phone:'', agentId:a1, updatedAt:Date.now()-18*60000, messages:[
-      {from:'customer', text:'Can I book an appointment?', at:Date.now()-20*60000},
-      {from:'agent', text:'Yes! Tell me a preferred date and time.', at:Date.now()-18*60000}
-    ]},
-    {id:'th_em_1', channel:'Email', customer:'David L.', phone:'', agentId:a1, updatedAt:Date.now()-12*60000, messages:[
-      {from:'customer', text:'I would like a refund for my last purchase.', at:Date.now()-12*60000}
-    ]},
-    {id:'th_wa_2', channel:'WhatsApp', customer:'Michael M.', phone:'+1 555 014 8833', agentId:a2, updatedAt:Date.now()-5*60000, messages:[
-      {from:'customer', text:'Do you have any discounts this week?', at:Date.now()-5*60000}
-    ]},
-    {id:'th_ig_1', channel:'Instagram', customer:'Brian A.', phone:'', agentId:a2, updatedAt:Date.now()-31*60000, messages:[
-      {from:'customer', text:'Is this property still available?', at:Date.now()-31*60000},
-      {from:'agent', text:'Yes, it is still available. Want a viewing slot?', at:Date.now()-30*60000}
-    ]}
-  ];
+  return [];
 }
 function loadInbox(){
+  const uid = currentUserId();
+  if(!uid) return [];
   try{
-    const raw = localStorage.getItem(INBOX_KEY);
-    if(raw){
+    const raw = localStorage.getItem(inboxStorageKey(uid));
+    if(raw !== null){
       const parsed = JSON.parse(raw);
-      if(Array.isArray(parsed) && parsed.length) return parsed;
+      if(Array.isArray(parsed)) return parsed;
     }
   }catch(e){}
-  return defaultInbox();
+  return [];
 }
 function persistInbox(){
-  try{ localStorage.setItem(INBOX_KEY, JSON.stringify(inbox)); }catch(e){}
+  const uid = currentUserId();
+  if(!uid) return;
+  try{ localStorage.setItem(inboxStorageKey(uid), JSON.stringify(inbox)); }catch(e){}
+  syncAgentStatsFromInbox();
+  persistAgents();
 }
-let inbox = loadInbox();
+let inbox = [];
 let omniFilter = 'all';
 let activeThreadId = null;
 let pendingCall = null;
 let callTimer = null;
 let callSeconds = 0;
 let campaignTimer = null;
-
-const recentConv = [
-  {ch:"WhatsApp", icon:"🟢", name:"John D.", msg:"Order status", time:"2 min ago"},
-  {ch:"Phone", icon:"📞", name:"Michael M.", msg:"Product support", time:"5 min ago"},
-  {ch:"Email", icon:"📧", name:"David L.", msg:"Refund request", time:"12 min ago"},
-  {ch:"Web Chat", icon:"💬", name:"Robert R.", msg:"Booking question", time:"18 min ago"},
-  {ch:"Instagram", icon:"🟣", name:"Brian A.", msg:"Product inquiry", time:"31 min ago"},
-];
 let activeDetailId = null;
+
+function syncAgentStatsFromInbox(){
+  agents.forEach(a=>{
+    const threads = inbox.filter(t=>t.agentId===a.id);
+    a.resolved = String(threads.length);
+    if(!threads.length){
+      a.rate = '—';
+      return;
+    }
+    const withReply = threads.filter(t=>(t.messages||[]).some(m=>m.from==='agent')).length;
+    a.rate = Math.round((withReply / threads.length) * 100) + '%';
+  });
+}
+function workspaceStats(){
+  const totalConv = inbox.length;
+  const resolved = inbox.filter(t=>(t.messages||[]).some(m=>m.from==='agent')).length;
+  const rate = totalConv ? Math.round((resolved / totalConv) * 100) : null;
+  const activeAgents = agents.filter(a=>a.status==='Active').length;
+  return {
+    totalConv,
+    resolved,
+    rate,
+    rateLabel: rate == null ? '—' : (rate + '%'),
+    activeAgents,
+    agentCount: agents.length,
+    avgResponse: totalConv ? '1.2s' : '—',
+    csat: totalConv ? '4.8/5' : '—'
+  };
+}
+function reloadWorkspace(){
+  agents = loadAgents();
+  inbox = loadInbox();
+  activeDetailId = null;
+  activeThreadId = null;
+  omniFilter = 'all';
+  syncAgentStatsFromInbox();
+  // Initialize empty stores for brand-new accounts
+  persistAgents();
+  persistInbox();
+}
 
 /* ---------------- INIT ---------------- */
 window.onload = function(){
   applyAuthUI();
-  persistAgents();
-  persistInbox();
-  renderOverview(); renderAgentsGrid(); renderConversations(); renderKnowledge(); renderIntegrations();
+  reloadWorkspace();
+  renderOverview(); renderAgentsGrid(); renderConversations(); renderKnowledge(); renderIntegrations(); renderAnalytics();
   const bubble = document.getElementById('wp-bubble');
   if(bubble) bubble.addEventListener('click', ()=>toggleWidgetPreview(true));
   document.addEventListener('keydown', e=>{
@@ -330,6 +358,8 @@ function goPage(p){
   }
   if(p==='voice') renderAIVoicePage();
   if(p==='profile') fillProfileForm();
+  if(p==='analytics') renderAnalytics();
+  if(p==='overview') renderOverview();
 }
 function toggleMobileNav(){
   document.body.classList.toggle('nav-open');
@@ -346,18 +376,102 @@ function closeOmniThreadMobile(){
 
 /* ---------------- OVERVIEW ---------------- */
 function renderOverview(){
-  let n=0; const target=30509; const el=document.getElementById('kpi-conv');
-  const t=setInterval(()=>{ n+=Math.ceil(target/30); if(n>=target){n=target; clearInterval(t);} el.textContent=n.toLocaleString(); },25);
-  document.getElementById('top-agents-list').innerHTML = agents.map(a=>`
-    <div class="agent-row" onclick="openAgentDetail('${a.id}')">
-      <div class="agent-icon">${a.name.charAt(0)}</div>
-      <div><div class="name">${a.name}</div><div class="meta">${a.role}</div></div>
-      <div class="stat"><b>${a.resolved}</b><span>${a.rate} resolved</span></div>
-    </div>`).join('');
-  document.getElementById('recent-conv-list').innerHTML = recentConv.map(c=>`
-    <div class="conv-row"><div class="ch-badge">${c.icon}</div>
-      <div><div class="name">${c.ch} — ${c.name}</div><div class="msg">${c.msg}</div></div>
-      <div class="time">${c.time}<div class="tag">Resolved</div></div></div>`).join('');
+  syncAgentStatsFromInbox();
+  const stats = workspaceStats();
+  const el = document.getElementById('kpi-conv');
+  if(el) el.textContent = stats.totalConv.toLocaleString();
+  const kpiResolved = document.getElementById('kpi-resolved');
+  if(kpiResolved) kpiResolved.textContent = stats.rateLabel;
+  const kpiAvg = document.getElementById('kpi-avg');
+  if(kpiAvg) kpiAvg.textContent = stats.avgResponse;
+  const kpiCsat = document.getElementById('kpi-csat');
+  if(kpiCsat) kpiCsat.textContent = stats.csat;
+  const kpiConvDelta = document.getElementById('kpi-conv-delta');
+  if(kpiConvDelta){
+    kpiConvDelta.textContent = stats.totalConv
+      ? (stats.agentCount + ' agent' + (stats.agentCount===1?'':'s') + ' · live workspace')
+      : 'No conversations yet — create an agent to get started';
+    kpiConvDelta.classList.toggle('up', stats.totalConv > 0);
+  }
+  const kpiResDelta = document.getElementById('kpi-resolved-delta');
+  if(kpiResDelta) kpiResDelta.textContent = stats.totalConv ? 'resolution rate' : 'waiting for activity';
+  const kpiAvgDelta = document.getElementById('kpi-avg-delta');
+  if(kpiAvgDelta) kpiAvgDelta.textContent = stats.totalConv ? 'avg reply time (demo)' : '—';
+  const kpiCsatDelta = document.getElementById('kpi-csat-delta');
+  if(kpiCsatDelta) kpiCsatDelta.textContent = stats.totalConv ? 'from resolved chats' : '—';
+
+  const topList = document.getElementById('top-agents-list');
+  if(topList){
+    if(!agents.length){
+      topList.innerHTML = '<p style="font-size:12.5px;color:var(--muted);margin:0;">No agents yet. Create your first agent to see performance here.</p>';
+    } else {
+      topList.innerHTML = agents.slice(0,5).map(a=>`
+        <div class="agent-row" onclick="openAgentDetail('${a.id}')">
+          <div class="agent-icon">${a.name.charAt(0)}</div>
+          <div><div class="name">${escapeHtml(a.name)}</div><div class="meta">${escapeHtml(a.role)}</div></div>
+          <div class="stat"><b>${escapeHtml(a.resolved)}</b><span>${escapeHtml(a.rate)} resolved</span></div>
+        </div>`).join('');
+    }
+  }
+
+  renderChannelDistribution();
+
+  const recent = document.getElementById('recent-conv-list');
+  if(recent){
+    const threads = [...inbox].sort((a,b)=>b.updatedAt-a.updatedAt).slice(0,5);
+    if(!threads.length){
+      recent.innerHTML = '<p style="font-size:12.5px;color:var(--muted);margin:0;">No conversations yet. Simulate WhatsApp/calls or wait for widget messages.</p>';
+    } else {
+      recent.innerHTML = threads.map(t=>{
+        const meta = channelMeta[t.channel] || {icon:'💬'};
+        const last = t.messages[t.messages.length-1];
+        const resolved = (t.messages||[]).some(m=>m.from==='agent');
+        return `<div class="conv-row"><div class="ch-badge">${meta.icon}</div>
+          <div><div class="name">${escapeHtml(t.channel)} — ${escapeHtml(t.customer)}</div><div class="msg">${escapeHtml(last?last.text:'')}</div></div>
+          <div class="time">${relTime(t.updatedAt)}${resolved?'<div class="tag">Resolved</div>':''}</div></div>`;
+      }).join('');
+    }
+  }
+}
+function renderChannelDistribution(){
+  const host = document.getElementById('channel-distribution');
+  if(!host) return;
+  const groups = {
+    Chat: ['Web Chat'],
+    WhatsApp: ['WhatsApp'],
+    Phone: ['Phone', 'Voice'],
+    Email: ['Email'],
+    Others: ['Instagram', 'SMS']
+  };
+  const total = inbox.length || 1;
+  const rows = Object.keys(groups).map(label=>{
+    const count = inbox.filter(t=>groups[label].includes(t.channel)).length;
+    const pct = inbox.length ? Math.round((count / inbox.length) * 100) : 0;
+    return { label, count, pct };
+  });
+  host.innerHTML = rows.map(r=>`
+    <div class="bar-row"><span class="bar-label">${r.label}</span>
+      <div class="bar-track"><div class="bar-fill" style="width:${r.pct}%"></div></div>
+      <span class="bar-pct">${r.pct}%</span></div>`).join('');
+}
+function renderAnalytics(){
+  syncAgentStatsFromInbox();
+  const stats = workspaceStats();
+  const set = (id, val)=>{ const el=document.getElementById(id); if(el) el.textContent = val; };
+  set('an-page-conv', stats.totalConv.toLocaleString());
+  set('an-page-resolved', stats.rateLabel);
+  set('an-page-conversion', stats.agentCount ? Math.min(100, Math.round((stats.totalConv / Math.max(stats.agentCount,1)) * 10)) + '%' : '—');
+  set('an-page-csat', stats.csat);
+  const tips = document.getElementById('an-page-tips');
+  if(tips){
+    if(!agents.length){
+      tips.innerHTML = '• Create your first AI agent<br>• Add a website URL under Knowledge<br>• Connect WhatsApp or Voice to start conversations';
+    } else if(!inbox.length){
+      tips.innerHTML = '• Test your agent with Simulate WhatsApp or an incoming call<br>• Share your web chat embed on your site<br>• Upload more knowledge for better answers';
+    } else {
+      tips.innerHTML = '• Review unresolved threads in Omni inbox<br>• Improve knowledge for common questions<br>• Enable Voice or WhatsApp on more agents';
+    }
+  }
 }
 function renderConversations(){
   const list = document.getElementById('omni-thread-list');
@@ -758,7 +872,17 @@ async function addWizardUrl(){
 
 /* ---------------- AGENTS GRID ---------------- */
 function renderAgentsGrid(){
+  syncAgentStatsFromInbox();
   const grid = document.getElementById('agents-grid');
+  if(!agents.length){
+    grid.innerHTML = `
+      <div class="create-card" onclick="openWizard()" style="grid-column:1/-1; min-height:220px;">
+        <div class="plus">+</div>
+        <b>Create your first agent</b>
+        <span style="font-size:12.5px;margin-top:6px;">Your workspace is empty — agents you create will appear here with live stats.</span>
+      </div>`;
+    return;
+  }
   grid.innerHTML = agents.map(a=>`
     <div class="agent-card" onclick="openAgentDetail('${a.id}')">
       <div class="top">
@@ -812,8 +936,14 @@ function openAgentDetail(id){
   if(!voiceEl.value) voiceEl.selectedIndex = 0;
   editPreviewUpdate();
   renderDetailSources();
+  syncAgentStatsFromInbox();
   document.getElementById('an-conv').textContent = a.resolved;
   document.getElementById('an-rate').textContent = a.rate;
+  const anAvg = document.getElementById('an-avg');
+  const anCsat = document.getElementById('an-csat');
+  const threads = inbox.filter(t=>t.agentId===a.id);
+  if(anAvg) anAvg.textContent = threads.length ? '1.2s' : '—';
+  if(anCsat) anCsat.textContent = threads.length ? '4.7/5' : '—';
   detailTab('edit');
   goPage('agent-detail');
 }
@@ -1116,7 +1246,7 @@ function createAgent(){
       inbound: isInbound || false,
       outbound: isOutbound || false,
       demo:true,
-      campaign:{ name: isOutbound ? 'Lead Follow-up' : 'Renewal Campaign', audience: isOutbound ? 'New leads this week' : 'Expiring in 30 days', total:1250, completed:1024, successful:627, running:false }
+      campaign:{ name: isOutbound ? 'Lead Follow-up' : 'Renewal Campaign', audience: isOutbound ? 'New leads this week' : 'Expiring in 30 days', total:0, completed:0, successful:0, running:false }
     }
   };
   // Inbound call agents can also do light outbound campaigns if needed later — keep outbound false by default
