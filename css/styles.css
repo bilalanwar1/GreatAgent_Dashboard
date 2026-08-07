@@ -636,7 +636,9 @@
     isolation:isolate;
     min-height:100vh;
     min-height:100dvh;
-    overflow:hidden;
+    overflow-x:hidden;
+    overflow-y:auto;
+    -webkit-overflow-scrolling:touch;
     background:
       radial-gradient(ellipse 90% 70% at 0% 0%, rgba(91,95,239,0.45), transparent 55%),
       radial-gradient(ellipse 70% 55% at 100% 10%, rgba(139,92,246,0.35), transparent 50%),
@@ -647,6 +649,11 @@
     align-items:center;
     justify-content:center;
     padding:32px 18px;
+    padding:
+      max(24px, env(safe-area-inset-top))
+      max(16px, env(safe-area-inset-right))
+      max(28px, env(safe-area-inset-bottom))
+      max(16px, env(safe-area-inset-left));
   }
   .auth-body::before,
   .auth-body::after{
@@ -753,6 +760,8 @@
     color:#fff;
     border-radius:12px;
     padding:12px 14px;
+    font-size:16px; /* prevents iOS zoom on focus */
+    min-height:48px;
     transition:border-color .15s ease, box-shadow .15s ease, background .15s ease;
   }
   .auth-card .field input::placeholder{
@@ -767,9 +776,10 @@
   .auth-submit{
     width:100%;
     margin-top:8px;
-    padding:13px 18px;
+    padding:14px 18px;
+    min-height:48px;
     border-radius:12px;
-    font-size:14.5px;
+    font-size:15px;
     box-shadow:0 10px 28px -8px rgba(91,95,239,0.65);
   }
   .auth-submit:hover:not(:disabled){
@@ -820,12 +830,89 @@
     background:rgba(255,255,255,0.1);
     color:#fff;
   }
-  @media (max-width:760px){
-    .auth-shell{grid-template-columns:1fr; gap:22px; max-width:440px;}
+  @media (max-width:900px){
+    .auth-shell{
+      grid-template-columns:1fr;
+      gap:24px;
+      max-width:460px;
+    }
     .auth-brand{text-align:center;}
     .auth-brand p{max-width:none; margin:0 auto;}
     .auth-brand .brand{justify-content:center;}
-    .auth-card{padding:26px 20px;}
+  }
+
+  @media (max-width:760px){
+    .auth-body{
+      align-items:flex-start;
+      padding-top:max(20px, env(safe-area-inset-top));
+    }
+    .auth-shell{
+      gap:18px;
+      max-width:440px;
+      width:100%;
+      margin:0 auto;
+    }
+    .auth-brand h1{
+      font-size:clamp(24px, 7vw, 30px);
+      margin-bottom:8px;
+    }
+    .auth-brand p{
+      font-size:13.5px;
+      line-height:1.5;
+    }
+    .auth-brand .brand{
+      font-size:19px;
+      margin-bottom:12px;
+    }
+    .auth-card{
+      padding:22px 18px;
+      border-radius:18px;
+      width:100%;
+    }
+    .auth-card h2{font-size:20px;}
+    .auth-sub{font-size:12.5px; margin-bottom:18px;}
+    .auth-card .field{margin-bottom:14px;}
+    .field-label-row{
+      flex-wrap:wrap;
+      gap:4px 10px;
+    }
+    .forgot-link{
+      font-size:12.5px;
+      padding:4px 0;
+    }
+    .auth-card .password-toggle,
+    .password-toggle{
+      width:44px;
+      height:44px;
+      right:2px;
+    }
+    .password-wrap input{padding-right:50px;}
+    .auth-body::before{
+      width:220px; height:220px;
+      top:-60px; left:-80px;
+    }
+    .auth-body::after{
+      width:180px; height:180px;
+      bottom:-40px; right:-60px;
+    }
+    .auth-switch{font-size:13px; line-height:1.5;}
+  }
+
+  @media (max-width:420px){
+    .auth-body{
+      padding-left:12px;
+      padding-right:12px;
+    }
+    .auth-brand p{display:none;} /* keep brand + title; card carries the message */
+    .auth-card{padding:20px 14px; border-radius:16px;}
+    .auth-card h2{font-size:18px;}
+    .auth-submit{font-size:14.5px;}
+  }
+
+  @media (max-height:700px) and (max-width:900px){
+    .auth-body{align-items:flex-start;}
+    .auth-brand h1{font-size:22px;}
+    .auth-brand{margin-bottom:0;}
   }
 
   /* Password toggles on light pages (e.g. profile) */
@@ -837,3 +924,15 @@
     display:inline-flex; align-items:center; justify-content:center;
   }
   .password-toggle:hover{background:#F1F2F8; color:var(--text);}
+
+  @media (max-width:760px){
+    .profile-layout{grid-template-columns:1fr;}
+    .profile-photo-card{grid-column:auto;}
+    .profile-photo-row{flex-direction:column; align-items:flex-start;}
+    .page-profile .page-header,
+    #page-profile .page-header{
+      flex-direction:column;
+      align-items:stretch;
+    }
+    #page-profile .page-header .btn{width:100%;}
+  }
