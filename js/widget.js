@@ -1,4 +1,4 @@
-/* GreatAgen embeddable chat widget */
+/* GreatAgen embeddable chat widget — answers only from agent knowledge */
 (function () {
   'use strict';
 
@@ -33,51 +33,15 @@
     return null;
   }
 
-  function answerFromSources(question, sources) {
-    const q = (question || '').trim();
-    if (!q) return { answer: 'Please type a question.', cite: null };
-    const urlSources = (sources || []).filter((s) => s.type === 'url' && s.content && s.status !== 'error');
-    if (!urlSources.length) {
-      return {
-        answer: "Thanks for your message! Add a website URL in Knowledge so I can answer from your site content.",
-        cite: null
-      };
-    }
-    const stop = new Set(['the','a','an','and','or','to','of','in','on','for','is','are','what','when','where','how','do','does','can','you','your','me','my','we','our','with','from','about','please','tell']);
-    let tokens = q.toLowerCase().replace(/[^\w\s]/g, ' ').split(/\s+/).filter((t) => t.length > 2 && !stop.has(t));
-    if (!tokens.length) tokens = q.toLowerCase().split(/\s+/).filter(Boolean).slice(0, 3);
-
-    let best = { score: 0, para: '', source: null };
-    urlSources.forEach((src) => {
-      src.content
-        .split(/\n+/)
-        .map((p) => p.trim())
-        .filter((p) => p.length > 40)
-        .forEach((para) => {
-          const lower = para.toLowerCase();
-          let score = 0;
-          tokens.forEach((t) => {
-            if (lower.includes(t)) score += 1 + (t.length > 5 ? 0.5 : 0);
-          });
-          if (score > best.score) best = { score, para, source: src };
-        });
-    });
-
-    if (best.score === 0) {
-      const fallback = urlSources[0];
-      const snippet =
-        fallback.content
-          .split(/\n+/)
-          .map((p) => p.trim())
-          .filter((p) => p.length > 40)[0] || fallback.content.slice(0, 280);
-      return {
-        answer: `Here's related info from our site:\n\n${snippet.slice(0, 420)}${snippet.length > 420 ? '…' : ''}`,
-        cite: fallback.name
-      };
+  function answerQuestion(question, agent) {
+    if (typeof Knowledge !== 'undefined' && Knowledge.answerFromKnowledge) {
+      return Knowledge.answerFromKnowledge(question, agent);
     }
     return {
-      answer: best.para.slice(0, 520) + (best.para.length > 520 ? '…' : ''),
-      cite: best.source.name
+      answer:
+        'Knowledge engine not loaded. Include js/knowledge.js before the widget script.',
+      cite: null,
+      found: false
     };
   }
 
@@ -179,7 +143,7 @@
       setTimeout(() => {
         typing.remove();
         const latest = loadAgent(agentId) || agent;
-        const result = answerFromSources(q, latest.sources || []);
+        const result = answerQuestion(q, latest);
         addMsg(result.answer, 'bot');
       }, 650);
     }

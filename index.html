@@ -9,6 +9,13 @@
 <link rel="stylesheet" href="css/styles.css">
 <script src="js/auth.js"></script>
 <script>Auth.requireAuth('signup.html');</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+<script>
+  if (window.pdfjsLib) {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  }
+</script>
 </head>
 <body>
 
@@ -359,11 +366,11 @@
               <span class="soon-pill" style="background:#EEF0FF;color:var(--indigo); margin-left:0;">Demo</span>
             </div>
             <div class="campaign-grid">
-              <div class="campaign-stat"><span class="cl">Campaign</span><b id="camp-name">Renewal Campaign</b></div>
-              <div class="campaign-stat"><span class="cl">Audience</span><b id="camp-audience">Expiring in 30 days</b></div>
-              <div class="campaign-stat"><span class="cl">Total Calls</span><b id="camp-total">1,250</b></div>
-              <div class="campaign-stat"><span class="cl">Completed</span><b id="camp-done">1,024 <span class="pct">(82%)</span></b></div>
-              <div class="campaign-stat"><span class="cl">Successful</span><b id="camp-ok">627 <span class="pct">(50%)</span></b></div>
+              <div class="campaign-stat"><span class="cl">Campaign</span><b id="camp-name">—</b></div>
+              <div class="campaign-stat"><span class="cl">Audience</span><b id="camp-audience">—</b></div>
+              <div class="campaign-stat"><span class="cl">Total Calls</span><b id="camp-total">0</b></div>
+              <div class="campaign-stat"><span class="cl">Completed</span><b id="camp-done">0 <span class="pct">(0%)</span></b></div>
+              <div class="campaign-stat"><span class="cl">Successful</span><b id="camp-ok">0 <span class="pct">(0%)</span></b></div>
             </div>
             <div class="field" style="margin-top:14px; max-width:320px;">
               <label>Campaign type</label>
@@ -377,9 +384,10 @@
             </div>
             <div class="embed-actions" style="margin-top:14px;">
               <button class="btn btn-primary btn-sm" id="camp-start-btn" onclick="startCallCampaign()">Start Campaign</button>
+              <button class="btn btn-danger btn-sm hidden" id="camp-stop-btn" onclick="stopCallCampaign()">Stop Campaign</button>
               <button class="btn btn-ghost btn-sm" onclick="goPage('conversations')">View call logs in inbox</button>
             </div>
-            <p class="hint-text" id="camp-run-note" style="display:none;">Campaign running (demo) — call results appear in Omni inbox as Phone threads.</p>
+            <p class="hint-text" id="camp-run-note" style="display:none;">Campaign running — first call now, then one call every 30 seconds. Results appear in Omni inbox as Phone threads.</p>
           </div>
         </div>
         <div class="detail-tab-panel" id="tab-knowledge">
@@ -397,7 +405,7 @@
               <b>Click to upload, or drag file here</b>
               PDF or DOCX — up to 20MB
             </div>
-            <input type="file" id="detail-file" class="hidden" onchange="addDetailFile(event)">
+            <input type="file" id="detail-file" class="hidden" accept=".pdf,.docx,.txt,.md,.csv,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onchange="addDetailFile(event)">
             <div class="field" style="margin-top:18px;">
               <label>Ask this agent</label>
               <div class="url-row">
@@ -517,11 +525,11 @@
           <div class="voice-campaign-card">
             <h3>Call Campaign</h3>
             <div class="voice-campaign-rows">
-              <div class="vcr"><span>Campaign</span><b id="vp-camp-name">Renewal Campaign</b></div>
-              <div class="vcr"><span>Audience</span><b id="vp-camp-audience">Expiring in 30 days</b></div>
-              <div class="vcr"><span>Total Calls</span><b id="vp-camp-total">1,250</b></div>
-              <div class="vcr"><span>Completed</span><b id="vp-camp-done">1,024 (82%)</b></div>
-              <div class="vcr"><span>Successful</span><b id="vp-camp-ok">627 (50%)</b></div>
+              <div class="vcr"><span>Campaign</span><b id="vp-camp-name">—</b></div>
+              <div class="vcr"><span>Audience</span><b id="vp-camp-audience">—</b></div>
+              <div class="vcr"><span>Total Calls</span><b id="vp-camp-total">0</b></div>
+              <div class="vcr"><span>Completed</span><b id="vp-camp-done">0 (0%)</b></div>
+              <div class="vcr"><span>Successful</span><b id="vp-camp-ok">0 (0%)</b></div>
             </div>
             <div class="field voice-camp-type-field">
               <label>Campaign type</label>
@@ -533,8 +541,12 @@
                 <option>Satisfaction Survey</option>
               </select>
             </div>
-            <button class="btn btn-primary voice-campaign-btn" id="vp-camp-start-btn" onclick="startCallCampaignFromPage()">Start Campaign</button>
-            <p class="hint-text" id="vp-camp-run-note" style="display:none;">Campaign running (demo) — results appear in Omni inbox as Phone threads.</p>
+            <div class="voice-campaign-actions">
+              <button class="btn btn-primary voice-campaign-btn" id="vp-camp-start-btn" onclick="startCallCampaignFromPage()">Start Campaign</button>
+              <button class="btn btn-danger voice-campaign-btn hidden" id="vp-camp-stop-btn" onclick="stopCallCampaignFromPage()">Stop Campaign</button>
+            </div>
+            <button class="btn btn-ghost btn-sm" style="margin-top:10px;" onclick="goPage('conversations')">View call logs in inbox</button>
+            <p class="hint-text" id="vp-camp-run-note" style="display:none;">Campaign running — first call now, then one call every 30 seconds. Results appear in Omni inbox as Phone threads.</p>
           </div>
         </div>
       </div>
@@ -759,7 +771,7 @@
             <b>Click to upload, or drag file here</b>
             PDF or DOCX — up to 20MB
           </div>
-          <input type="file" id="w-file" class="hidden" onchange="addFileSource(event)">
+          <input type="file" id="w-file" class="hidden" accept=".pdf,.docx,.txt,.md,.csv,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onchange="addFileSource(event)">
           <div class="source-list" id="source-list"></div>
         </div>
 
@@ -859,6 +871,7 @@
 </div>
 
 <div class="toast" id="toast"><span class="ic">✓</span><span id="toast-text">Saved</span></div>
+<script src="js/knowledge.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

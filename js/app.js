@@ -65,9 +65,28 @@ function normalizeAgent(a){
   if(!a.voiceCalling.campaign){
     a.voiceCalling.campaign = { name:'Renewal Campaign', audience:'Expiring in 30 days', total:0, completed:0, successful:0, running:false };
   }
+  sanitizeCampaign(a.voiceCalling.campaign);
   if(a.resolved == null) a.resolved = '0';
   if(a.rate == null) a.rate = '—';
   return a;
+}
+function sanitizeCampaign(c){
+  if(!c) return c;
+  // Strip legacy shared demo totals so each user starts clean
+  if(Number(c.total) === 1250 && Number(c.completed) === 1024 && !c.running){
+    c.total = 0;
+    c.completed = 0;
+    c.successful = 0;
+  }
+  c.total = Math.max(0, Number(c.total) || 0);
+  c.completed = Math.max(0, Number(c.completed) || 0);
+  c.successful = Math.max(0, Number(c.successful) || 0);
+  if(c.completed > c.total) c.completed = c.total;
+  if(c.successful > c.completed) c.successful = c.completed;
+  c.running = !!c.running;
+  if(!c.name) c.name = 'Renewal Campaign';
+  if(!c.audience) c.audience = 'Selected audience';
+  return c;
 }
 function loadAgents(){
   const uid = currentUserId();
@@ -164,6 +183,7 @@ function reloadWorkspace(){
   activeThreadId = null;
   omniFilter = 'all';
   syncAgentStatsFromInbox();
+  agents.forEach(reindexAgent);
   // Initialize empty stores for brand-new accounts
   persistAgents();
   persistInbox();
@@ -556,8 +576,7 @@ function sendOmniReply(){
   if(!text && agent){
     const lastCustomer = [...t.messages].reverse().find(m=>m.from==='customer');
     if(lastCustomer){
-      const kb = answerFromSources(lastCustomer.text, agent.sources);
-      text = kb.cite ? kb.answer : (roleDemo[agent.role]?.a || 'Thanks — we are looking into this for you.');
+      text = groundedAnswer(lastCustomer.text, agent);
     }
   }
   if(!text){ showToast('Type a reply first'); return; }
@@ -595,10 +614,10 @@ function fillKnowledgeAgentSelects(){
   if(ask){ const v=ask.value; ask.innerHTML = opts || '<option value="">No agents</option>'; if(v) ask.value=v; }
 }
 function sourceStatusLabel(s){
-  if(s.type==='file') return 'File uploaded';
   if(s.status==='extracting') return 'Extracting content…';
   if(s.status==='error') return s.error || 'Extraction failed';
-  if(s.content) return `${(s.wordCount||0).toLocaleString()} words extracted`;
+  if(s.content) return `${(s.wordCount||0).toLocaleString()} words · searchable`;
+  if(s.type==='file') return 'File uploaded (no text extracted)';
   return 'Ready';
 }
 function escapeHtml(str){
@@ -607,6 +626,7 @@ function escapeHtml(str){
 function removeKnowledgeSource(agentId, index){
   const a = agents.find(x=>x.id===agentId); if(!a) return;
   a.sources.splice(index,1);
+  reindexAgent(a);
   renderKnowledge();
   if(activeDetailId===agentId) renderDetailSources();
   persistAgents();
@@ -742,39 +762,23 @@ async function extractWebsiteContent(url){
   }
   throw new Error(lastErr);
 }
-function answerFromSources(question, sources){
-  const q = (question||'').trim();
-  if(!q) return { answer: 'Please type a question.', cite: null };
-  const urlSources = (sources||[]).filter(s=>s.type==='url' && s.content && s.status!=='error');
-  if(!urlSources.length) return { answer: 'No extracted website content yet. Add a URL and click Extract first.', cite: null };
-
-  const stop = new Set(['the','a','an','and','or','to','of','in','on','for','is','are','what','when','where','how','do','does','can','you','your','me','my','we','our','with','from','about','please','tell']);
-  let tokens = q.toLowerCase().replace(/[^\w\s]/g,' ').split(/\s+/).filter(t=>t.length>2 && !stop.has(t));
-  if(!tokens.length) tokens = q.toLowerCase().split(/\s+/).filter(Boolean).slice(0,3);
-
-  let best = { score:0, para:'', source:null };
-  urlSources.forEach(src=>{
-    const paras = src.content.split(/\n+/).map(p=>p.trim()).filter(p=>p.length>40);
-    paras.forEach(para=>{
-      const lower = para.toLowerCase();
-      let score = 0;
-      tokens.forEach(t=>{ if(lower.includes(t)) score += 1 + (t.length>5?0.5:0); });
-      if(score > best.score) best = { score, para, source: src };
-    });
-  });
-
-  if(best.score === 0){
-    const fallback = urlSources[0];
-    const snippet = fallback.content.split(/\n+/).map(p=>p.trim()).filter(p=>p.length>40)[0] || fallback.content.slice(0,280);
-    return {
-      answer: `I couldn't find an exact match, but here's related content from ${fallback.name}:\n\n${snippet.slice(0,420)}${snippet.length>420?'…':''}`,
-      cite: fallback.name
-    };
+function answerFromSources(question, agentOrSources){
+  if(typeof Knowledge !== 'undefined' && Knowledge.answerFromKnowledge){
+    return Knowledge.answerFromKnowledge(question, agentOrSources);
   }
+  // Minimal fallback if knowledge.js failed to load
   return {
-    answer: best.para.slice(0,520) + (best.para.length>520?'…':''),
-    cite: best.source.name
+    answer: 'Knowledge engine unavailable. Refresh the page and try again.',
+    cite: null,
+    found: false
   };
+}
+function reindexAgent(a){
+  if(!a) return;
+  if(typeof Knowledge !== 'undefined') Knowledge.rebuildAgentIndex(a);
+}
+function groundedAnswer(question, agentOrSources){
+  return answerFromSources(question, agentOrSources).answer;
 }
 function clearKbAnswer(){
   const el = document.getElementById('kb-answer');
@@ -794,6 +798,7 @@ async function addKnowledgeUrl(){
   try{
     const data = await extractWebsiteContent(url);
     Object.assign(source, data);
+    reindexAgent(a);
     document.getElementById('kb-url').value = '';
     showToast('Website content extracted');
   }catch(err){
@@ -812,8 +817,9 @@ function askKnowledge(){
   const q = document.getElementById('kb-ask').value;
   const box = document.getElementById('kb-answer');
   if(!a){ box.innerHTML = '<div class="kb-answer-empty">Select an agent.</div>'; return; }
-  const result = answerFromSources(q, a.sources);
-  box.innerHTML = `<div class="title">${escapeHtml(a.name)}</div><div>${escapeHtml(result.answer).replace(/\n/g,'<br>')}</div>${result.cite?`<div class="cite">Source: ${escapeHtml(result.cite)}</div>`:''}`;
+  const result = answerFromSources(q, a);
+  persistAgents();
+  box.innerHTML = `<div class="title">${escapeHtml(a.name)}</div><div>${escapeHtml(result.answer).replace(/\n/g,'<br>')}</div>${result.cite?`<div class="cite">Source: ${escapeHtml(result.cite)}</div>`:''}${!result.found?'<div class="cite">Not found in knowledge</div>':''}`;
 }
 
 async function addDetailUrl(){
@@ -828,6 +834,7 @@ async function addDetailUrl(){
   try{
     const data = await extractWebsiteContent(url);
     Object.assign(source, data);
+    reindexAgent(a);
     document.getElementById('detail-url').value = '';
     showToast('Website content extracted');
   }catch(err){
@@ -843,9 +850,10 @@ function askDetailKnowledge(){
   const a = agents.find(x=>x.id===activeDetailId); if(!a) return;
   const q = document.getElementById('detail-ask').value;
   const box = document.getElementById('detail-kb-answer');
-  const result = answerFromSources(q, a.sources);
+  const result = answerFromSources(q, a);
+  persistAgents();
   box.style.display = 'block';
-  box.innerHTML = `<div>${escapeHtml(result.answer).replace(/\n/g,'<br>')}</div>${result.cite?`<div class="cite">Source: ${escapeHtml(result.cite)}</div>`:''}`;
+  box.innerHTML = `<div>${escapeHtml(result.answer).replace(/\n/g,'<br>')}</div>${result.cite?`<div class="cite">Source: ${escapeHtml(result.cite)}</div>`:''}${!result.found?'<div class="cite">Not found in knowledge</div>':''}`;
 }
 
 async function addWizardUrl(){
@@ -1007,8 +1015,7 @@ function editPreviewUpdate(){
   }
   const demo = roleDemo[role];
   const a = agents.find(x=>x.id===activeDetailId);
-  const kb = a ? answerFromSources(demo.q, a.sources) : null;
-  const botA = (kb && kb.cite) ? kb.answer : demo.a;
+  const botA = a ? groundedAnswer(demo.q, a) : demo.a;
   document.getElementById('e-preview-body').innerHTML = `
     <div class="bubble bot">${roleIntro[role]}</div>
     <div class="bubble user">${escapeHtml(demo.q)}</div>
@@ -1045,17 +1052,37 @@ function renderDetailSources(){
   }).join('')
     : '<p style="font-size:12.5px; color:var(--muted);">No knowledge sources yet. Add a website URL below.</p>';
 }
-function addDetailFile(e){
+async function addDetailFile(e){
   const f = e.target.files[0]; if(!f) return;
+  e.target.value = '';
   const a = agents.find(x=>x.id===activeDetailId); if(!a) return;
-  a.sources.push({type:'file', name:f.name});
+  if(typeof Knowledge === 'undefined' || !Knowledge.extractFileText){
+    showToast('Knowledge engine unavailable — refresh the page');
+    return;
+  }
+  const source = { type:'file', name:f.name, status:'extracting', content:'', wordCount:0 };
+  a.sources.push(source);
+  renderDetailSources(); renderKnowledge();
+  try{
+    const text = await Knowledge.extractFileText(f);
+    source.content = text;
+    source.wordCount = text.split(/\s+/).filter(Boolean).length;
+    source.status = 'ready';
+    reindexAgent(a);
+    showToast('File extracted and indexed');
+  }catch(err){
+    source.status = 'error';
+    source.error = err.message || 'Could not extract text';
+    showToast(source.error);
+  }
   renderDetailSources(); renderKnowledge();
   persistAgents();
-  showToast('File uploaded successfully');
 }
 function removeDetailSource(i){
   const a = agents.find(x=>x.id===activeDetailId); if(!a) return;
-  a.sources.splice(i,1); renderDetailSources(); renderKnowledge();
+  a.sources.splice(i,1);
+  reindexAgent(a);
+  renderDetailSources(); renderKnowledge();
   persistAgents();
 }
 
@@ -1089,11 +1116,28 @@ document.getElementById('role-grid').addEventListener('click', e=>{
   livePreviewUpdate();
 });
 
-function addFileSource(e){
+async function addFileSource(e){
   const f = e.target.files[0]; if(!f) return;
-  sources.push({type:'file', name:f.name});
+  e.target.value = '';
+  if(typeof Knowledge === 'undefined' || !Knowledge.extractFileText){
+    showToast('Knowledge engine unavailable — refresh the page');
+    return;
+  }
+  const source = { type:'file', name:f.name, status:'extracting', content:'', wordCount:0 };
+  sources.push(source);
   renderSourceList();
-  showToast('File uploaded successfully');
+  try{
+    const text = await Knowledge.extractFileText(f);
+    source.content = text;
+    source.wordCount = text.split(/\s+/).filter(Boolean).length;
+    source.status = 'ready';
+    showToast('File extracted and searchable');
+  }catch(err){
+    source.status = 'error';
+    source.error = err.message || 'Could not extract text';
+    showToast(source.error);
+  }
+  renderSourceList();
 }
 function renderSourceList(){
   document.getElementById('source-list').innerHTML = sources.map((s,i)=>{
@@ -1204,16 +1248,17 @@ function openDemoModal(){
       </div>`;
     setTimeout(()=>{
       const tx = document.getElementById('demo-call-tx');
-      if(tx) tx.textContent = (roleIntro[role] || '') + '\n\nCaller: ' + (demo?.q || '') + '\n\nAgent: ' + (demo?.a || '');
+      if(tx){
+        const agentReply = groundedAnswer(demo?.q || '', { sources: sources });
+        tx.textContent = (roleIntro[role] || '') + '\n\nCaller: ' + (demo?.q || '') + '\n\nAgent: ' + agentReply;
+      }
     }, 900);
     return;
   }
 
   body.innerHTML = `<div class="bubble bot">${roleIntro[role]}</div>`;
-  const kb = answerFromSources(demo.q, sources);
-  const hasKb = sources.some(s=>s.type==='url' && s.content);
-  const userQ = hasKb ? (document.getElementById('w-url')?.dataset.lastQ || demo.q) : demo.q;
-  const botA = hasKb && kb.cite ? kb.answer : demo.a;
+  const userQ = demo.q;
+  const botA = groundedAnswer(userQ, { sources: sources });
 
   setTimeout(()=>{
     body.innerHTML += `<div class="bubble user">${escapeHtml(userQ)}</div><div class="demo-typing"><span></span><span></span><span></span></div>`;
@@ -1253,6 +1298,7 @@ function createAgent(){
   if(isInbound){ newAgent.voiceCalling.inbound = true; newAgent.voiceCalling.outbound = false; }
   if(isOutbound){ newAgent.voiceCalling.inbound = false; newAgent.voiceCalling.outbound = true; }
   agents.unshift(newAgent);
+  reindexAgent(newAgent);
   persistAgents();
   closeWizard();
   renderAgentsGrid(); renderOverview(); renderKnowledge(); renderIntegrations();
@@ -1269,9 +1315,17 @@ function getWidgetScriptUrl(){
   }
   return 'js/widget.js';
 }
+function getKnowledgeScriptUrl(){
+  if(location.protocol === 'http:' || location.protocol === 'https:'){
+    const path = location.pathname.replace(/[^/]*$/, '');
+    return location.origin + path + 'js/knowledge.js';
+  }
+  return 'js/knowledge.js';
+}
 function getEmbedCode(agentId){
+  const kb = getKnowledgeScriptUrl();
   const src = getWidgetScriptUrl();
-  return `<script src="${src}" data-agent-id="${agentId}" defer><\/script>`;
+  return `<script src="${kb}"><\/script>\n<script src="${src}" data-agent-id="${agentId}" defer><\/script>`;
 }
 function renderChannelsPanel(){
   const a = agents.find(x=>x.id===activeDetailId); if(!a) return;
@@ -1418,8 +1472,7 @@ function simulateWhatsAppIncoming(fromInbox){
     messages: [{from:'customer', text, at:Date.now()}]
   };
   if(a.whatsapp.autoReply !== false){
-    const kb = answerFromSources(text, a.sources);
-    const answer = kb.cite ? kb.answer : (roleDemo[a.role]?.a || roleIntro[a.role] || 'Thanks for messaging us on WhatsApp!');
+    const answer = groundedAnswer(text, a);
     thread.messages.push({from:'agent', text:answer, at:Date.now()+1});
   }
   inbox.unshift(thread);
@@ -1462,9 +1515,7 @@ function sendWidgetPreview(){
   body.scrollTop = body.scrollHeight;
   setTimeout(()=>{
     const typing = document.getElementById('wp-typing'); if(typing) typing.remove();
-    const kb = answerFromSources(q, a.sources);
-    const demo = roleDemo[a.role];
-    const answer = kb.cite ? kb.answer : (demo ? demo.a : "Thanks for your message — I'll help you with that.");
+    const answer = groundedAnswer(q, a);
     body.innerHTML += `<div class="bubble bot">${escapeHtml(answer)}</div>`;
     body.scrollTop = body.scrollHeight;
   }, 700);
@@ -1484,6 +1535,10 @@ function ensureVoiceChannel(a){
   }
 }
 function syncCampaignStats(c){
+  if(!c){
+    c = { name:'—', audience:'—', total:0, completed:0, successful:0, running:false };
+  }
+  sanitizeCampaign(c);
   const donePct = c.total ? Math.round((c.completed/c.total)*100) : 0;
   const okPct = c.total ? Math.round((c.successful/c.total)*100) : 0;
   const pairs = [
@@ -1504,18 +1559,25 @@ function syncCampaignStats(c){
   const vpDone = document.getElementById('vp-camp-done'); if(vpDone) vpDone.textContent = donePlain;
   const vpOk = document.getElementById('vp-camp-ok'); if(vpOk) vpOk.textContent = okPlain;
 
-  [['camp-type','camp-start-btn','camp-run-note'],['vp-camp-type','vp-camp-start-btn','vp-camp-run-note']].forEach(([typeId,btnId,noteId])=>{
+  [['camp-type','camp-start-btn','camp-stop-btn','camp-run-note'],['vp-camp-type','vp-camp-start-btn','vp-camp-stop-btn','vp-camp-run-note']].forEach(([typeId,startId,stopId,noteId])=>{
     const typeEl = document.getElementById(typeId);
-    if(typeEl){
+    if(typeEl && c.name && c.name !== '—'){
       const opts = [...typeEl.options].map(o=>o.value);
       if(opts.includes(c.name)) typeEl.value = c.name;
+      typeEl.disabled = !!c.running;
     }
     const note = document.getElementById(noteId);
-    const btn = document.getElementById(btnId);
+    const startBtn = document.getElementById(startId);
+    const stopBtn = document.getElementById(stopId);
     if(note) note.style.display = c.running ? 'block' : 'none';
-    if(btn){
-      btn.disabled = !!c.running;
-      btn.textContent = c.running ? 'Campaign running…' : 'Start Campaign';
+    if(startBtn){
+      startBtn.classList.toggle('hidden', !!c.running);
+      startBtn.disabled = !!c.running;
+      startBtn.textContent = 'Start Campaign';
+    }
+    if(stopBtn){
+      stopBtn.classList.toggle('hidden', !c.running);
+      stopBtn.disabled = !c.running;
     }
   });
 }
@@ -1523,7 +1585,7 @@ function renderAIVoicePage(){
   const sel = document.getElementById('vp-agent');
   if(!sel) return;
   const prev = sel.value || activeDetailId || agents[0]?.id;
-  sel.innerHTML = agents.map(a=>`<option value="${a.id}">${escapeHtml(a.name)} · ${escapeHtml(a.role)}</option>`).join('') || '<option value="">No agents</option>';
+  sel.innerHTML = agents.map(a=>`<option value="${a.id}">${escapeHtml(a.name)} · ${escapeHtml(a.role)}</option>`).join('') || '<option value="">No agents yet</option>';
   if(prev && agents.some(a=>a.id===prev)) sel.value = prev;
   const a = agents.find(x=>x.id===sel.value);
   if(a){
@@ -1536,6 +1598,9 @@ function renderAIVoicePage(){
       persistAgents();
     }
     syncCampaignStats(a.voiceCalling.campaign);
+  } else {
+    activeDetailId = null;
+    syncCampaignStats(null);
   }
 }
 function onVoicePageAgentChange(){
@@ -1572,6 +1637,11 @@ function startCallCampaignFromPage(){
   const id = document.getElementById('vp-agent')?.value;
   if(id) activeDetailId = id;
   startCallCampaign();
+}
+function stopCallCampaignFromPage(){
+  const id = document.getElementById('vp-agent')?.value;
+  if(id) activeDetailId = id;
+  stopCallCampaign();
 }
 function renderVoicePanel(){
   const a = agents.find(x=>x.id===activeDetailId); if(!a) return;
@@ -1696,8 +1766,7 @@ function acceptIncomingCall(){
   document.getElementById('call-live').classList.remove('hidden');
   const a = agents.find(x=>x.id===pendingCall.agentId);
   const greet = roleIntro[a?.role] || 'Hi! Thanks for calling. How can I help you today?';
-  const kb = a ? answerFromSources(pendingCall.question, a.sources) : { answer:'', cite:null };
-  const reply = kb.cite ? kb.answer : (roleDemo[a?.role]?.a || "I've noted your request and will take care of it.");
+  const reply = a ? groundedAnswer(pendingCall.question, a) : "I've noted your request and will take care of it.";
   const transcript = document.getElementById('call-transcript');
   transcript.textContent = 'Connecting…';
   callSeconds = 0;
@@ -1739,8 +1808,31 @@ function logPhoneCall(call, answered, summary){
   persistAgents();
   activeThreadId = thread.id;
 }
+function stopCallCampaign(){
+  const a = agents.find(x=>x.id===activeDetailId);
+  clearInterval(campaignTimer);
+  campaignTimer = null;
+  if(!a){
+    syncCampaignStats(null);
+    showToast('Campaign stopped');
+    return;
+  }
+  normalizeAgent(a);
+  const c = a.voiceCalling.campaign;
+  if(!c.running){
+    syncCampaignStats(c);
+    return;
+  }
+  c.running = false;
+  persistAgents();
+  renderVoicePanel();
+  syncCampaignStats(c);
+  renderOverview();
+  showToast('Campaign stopped — ' + c.completed + ' of ' + c.total + ' calls placed');
+}
 function startCallCampaign(){
-  const a = agents.find(x=>x.id===activeDetailId); if(!a) return;
+  const a = agents.find(x=>x.id===activeDetailId);
+  if(!a){ showToast('Select or create an agent first'); return; }
   normalizeAgent(a);
   if(!a.voiceCalling.outbound){
     a.voiceCalling.outbound = true;
@@ -1748,56 +1840,74 @@ function startCallCampaign(){
   }
   const c = a.voiceCalling.campaign;
   if(c.running){ showToast('Campaign already running'); return; }
+
+  const typeEl = document.getElementById('vp-camp-type') || document.getElementById('camp-type');
+  if(typeEl && typeEl.value){
+    c.name = typeEl.value;
+    c.audience = campaignAudiences[c.name] || 'Selected audience';
+  }
+  const CAMPAIGN_SIZE = 50;
+  const CALL_GAP_MS = 30000; // next call after 30 seconds
+  c.total = CAMPAIGN_SIZE;
+  c.completed = 0;
+  c.successful = 0;
   c.running = true;
-  c.completed = Math.min(c.total, c.completed);
   persistAgents();
   renderVoicePanel();
   syncCampaignStats(c);
-  showToast('Call campaign started (demo)');
 
-  let ticks = 0;
-  clearInterval(campaignTimer);
-  campaignTimer = setInterval(()=>{
-    ticks++;
-    c.completed = Math.min(c.total, c.completed + Math.ceil(Math.random()*8));
-    c.successful = Math.min(c.completed, c.successful + Math.ceil(Math.random()*4));
-    // Log a few sample calls into inbox
-    if(ticks % 2 === 0){
-      const phone = randomPhone();
-      inbox.unshift({
-        id: 'th_ph_' + Math.random().toString(36).slice(2,8),
-        channel:'Phone',
-        customer: 'Campaign Contact',
-        phone,
-        agentId: a.id,
-        updatedAt: Date.now(),
-        messages:[
-          {from:'customer', text:'Outbound campaign call: ' + c.name, at:Date.now()-1000},
-          {from:'agent', text: Math.random()>0.45 ? 'Contact reached — action completed.' : 'No answer — will retry later.', at:Date.now()}
-        ]
-      });
-      persistInbox();
-    }
+  function placeCampaignCall(){
+    if(!c.running) return;
+    const phone = randomPhone();
+    const reached = Math.random() > 0.4;
+    c.completed = Math.min(c.total, c.completed + 1);
+    if(reached) c.successful = Math.min(c.completed, c.successful + 1);
+
+    inbox.unshift({
+      id: 'th_ph_' + Math.random().toString(36).slice(2,8),
+      channel:'Phone',
+      customer: 'Campaign Contact',
+      phone,
+      agentId: a.id,
+      updatedAt: Date.now(),
+      messages:[
+        {from:'customer', text:'Outbound campaign call: ' + c.name, at:Date.now()-1000},
+        {from:'agent', text: reached ? 'Contact reached — action completed.' : 'No answer — will retry later.', at:Date.now()}
+      ]
+    });
+    persistInbox();
     persistAgents();
     if(activeDetailId===a.id){
       renderVoicePanel();
-      if(document.getElementById('page-voice') && !document.getElementById('page-voice').classList.contains('hidden')){
-        syncCampaignStats(a.voiceCalling.campaign);
-      }
+      syncCampaignStats(a.voiceCalling.campaign);
     }
-    if(c.completed >= c.total || ticks >= 12){
+    renderOverview();
+    renderConversations();
+
+    if(c.completed >= c.total){
       clearInterval(campaignTimer);
       campaignTimer = null;
       c.running = false;
-      c.completed = c.total;
       persistAgents();
       if(activeDetailId===a.id){
         renderVoicePanel();
         syncCampaignStats(a.voiceCalling.campaign);
       }
-      showToast('Campaign completed (demo)');
+      renderOverview();
+      renderAnalytics();
+      showToast('Campaign completed — ' + c.successful + ' successful of ' + c.total);
+      return;
     }
-  }, 900);
+    showToast('Call ' + c.completed + '/' + c.total + ' placed — next call in 30s');
+  }
+
+  clearInterval(campaignTimer);
+  campaignTimer = null;
+  // First call immediately, then one call every 30 seconds
+  placeCampaignCall();
+  if(c.running && c.completed < c.total){
+    campaignTimer = setInterval(placeCampaignCall, CALL_GAP_MS);
+  }
 }
 
 /* ---------------- TOAST ---------------- */

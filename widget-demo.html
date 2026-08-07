@@ -39,11 +39,16 @@
     (function(){
       const params = new URLSearchParams(location.search);
       const agentId = params.get('agent') || 'agt_support01';
-      const s = document.createElement('script');
-      s.src = 'js/widget.js';
-      s.defer = true;
-      s.setAttribute('data-agent-id', agentId);
-      document.body.appendChild(s);
+      const kb = document.createElement('script');
+      kb.src = 'js/knowledge.js';
+      kb.onload = function(){
+        const s = document.createElement('script');
+        s.src = 'js/widget.js';
+        s.defer = true;
+        s.setAttribute('data-agent-id', agentId);
+        document.body.appendChild(s);
+      };
+      document.body.appendChild(kb);
     })();
   </script>
 </body>
