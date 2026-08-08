@@ -35,6 +35,8 @@ function genAgentId(){ return 'agt_' + Math.random().toString(36).slice(2,10); }
 
 const AGENTS_KEY_PREFIX = 'greatagen_agents_';
 const INBOX_KEY_PREFIX = 'greatagen_inbox_';
+const WORKFLOWS_KEY_PREFIX = 'greatagen_workflows_';
+const WORKFLOW_LOG_KEY_PREFIX = 'greatagen_workflow_log_';
 
 function currentUserId(){
   if(typeof Auth === 'undefined') return null;
@@ -45,6 +47,12 @@ function agentsStorageKey(uid){
 }
 function inboxStorageKey(uid){
   return INBOX_KEY_PREFIX + (uid || 'guest');
+}
+function workflowsStorageKey(uid){
+  return WORKFLOWS_KEY_PREFIX + (uid || 'guest');
+}
+function workflowLogStorageKey(uid){
+  return WORKFLOW_LOG_KEY_PREFIX + (uid || 'guest');
 }
 
 function normalizeAgent(a){
@@ -66,6 +74,14 @@ function normalizeAgent(a){
     a.voiceCalling.campaign = { name:'Renewal Campaign', audience:'Expiring in 30 days', total:0, completed:0, successful:0, running:false };
   }
   sanitizeCampaign(a.voiceCalling.campaign);
+  if(!a.voiceNotes){
+    a.voiceNotes = { enabled:false, maxSeconds:60, transcribe:true, widgetMic:true };
+  }
+  a.voiceNotes.enabled = !!a.voiceNotes.enabled;
+  a.voiceNotes.transcribe = a.voiceNotes.transcribe !== false;
+  a.voiceNotes.widgetMic = a.voiceNotes.widgetMic !== false;
+  const maxSec = Number(a.voiceNotes.maxSeconds);
+  a.voiceNotes.maxSeconds = [15,30,60,90,120].includes(maxSec) ? maxSec : 60;
   if(a.resolved == null) a.resolved = '0';
   if(a.rate == null) a.rate = '—';
   return a;
@@ -147,6 +163,97 @@ let callTimer = null;
 let callSeconds = 0;
 let campaignTimer = null;
 let activeDetailId = null;
+let workflows = [];
+let workflowLog = [];
+let vnDemoRecorder = null;
+let vnDemoChunks = [];
+let vnDemoStream = null;
+let vnDemoUrl = null;
+let vnDemoTimer = null;
+let vnDemoSeconds = 0;
+let vnDemoRecognition = null;
+let vnDemoTranscript = '';
+let wpMicRecorder = null;
+let wpMicChunks = [];
+let wpMicStream = null;
+let wpMicTimer = null;
+let wpMicSeconds = 0;
+let wpMicRecognition = null;
+let wpMicTranscript = '';
+let wpMicRecording = false;
+
+const WF_TRIGGERS = {
+  after_reply: 'Agent sends a reply',
+  unknown_answer: 'Knowledge cannot answer',
+  new_conversation: 'New conversation starts',
+  call_ended: 'Call ends'
+};
+const WF_ACTIONS = {
+  notify_team: 'Notify team',
+  escalate: 'Escalate to human',
+  tag_thread: 'Tag conversation',
+  crm_log: 'Log to CRM',
+  follow_up: 'Queue follow-up'
+};
+
+function defaultWorkflows(){
+  return [
+    {
+      id: 'wf_default_unknown',
+      name: 'Escalate when unknown',
+      enabled: true,
+      agentId: 'all',
+      trigger: 'unknown_answer',
+      action: 'escalate',
+      runs: 0,
+      createdAt: Date.now()
+    },
+    {
+      id: 'wf_default_notify',
+      name: 'Notify team on reply',
+      enabled: false,
+      agentId: 'all',
+      trigger: 'after_reply',
+      action: 'notify_team',
+      runs: 0,
+      createdAt: Date.now()
+    }
+  ];
+}
+function loadWorkflows(){
+  const uid = currentUserId();
+  if(!uid) return defaultWorkflows();
+  try{
+    const raw = localStorage.getItem(workflowsStorageKey(uid));
+    if(raw !== null){
+      const parsed = JSON.parse(raw);
+      if(Array.isArray(parsed)) return parsed;
+    }
+  }catch(e){}
+  return defaultWorkflows();
+}
+function persistWorkflows(){
+  const uid = currentUserId();
+  if(!uid) return;
+  try{ localStorage.setItem(workflowsStorageKey(uid), JSON.stringify(workflows)); }catch(e){}
+}
+function loadWorkflowLog(){
+  const uid = currentUserId();
+  if(!uid) return [];
+  try{
+    const raw = localStorage.getItem(workflowLogStorageKey(uid));
+    if(raw !== null){
+      const parsed = JSON.parse(raw);
+      if(Array.isArray(parsed)) return parsed;
+    }
+  }catch(e){}
+  return [];
+}
+function persistWorkflowLog(){
+  const uid = currentUserId();
+  if(!uid) return;
+  try{ localStorage.setItem(workflowLogStorageKey(uid), JSON.stringify(workflowLog.slice(0,40))); }catch(e){}
+}
 
 function syncAgentStatsFromInbox(){
   agents.forEach(a=>{
@@ -179,6 +286,8 @@ function workspaceStats(){
 function reloadWorkspace(){
   agents = loadAgents();
   inbox = loadInbox();
+  workflows = loadWorkflows();
+  workflowLog = loadWorkflowLog();
   activeDetailId = null;
   activeThreadId = null;
   omniFilter = 'all';
@@ -187,13 +296,15 @@ function reloadWorkspace(){
   // Initialize empty stores for brand-new accounts
   persistAgents();
   persistInbox();
+  persistWorkflows();
+  persistWorkflowLog();
 }
 
 /* ---------------- INIT ---------------- */
 window.onload = function(){
   applyAuthUI();
   reloadWorkspace();
-  renderOverview(); renderAgentsGrid(); renderConversations(); renderKnowledge(); renderIntegrations(); renderAnalytics();
+  renderOverview(); renderAgentsGrid(); renderConversations(); renderKnowledge(); renderWorkflows(); renderIntegrations(); renderAnalytics();
   const bubble = document.getElementById('wp-bubble');
   if(bubble) bubble.addEventListener('click', ()=>toggleWidgetPreview(true));
   document.addEventListener('keydown', e=>{
@@ -372,6 +483,7 @@ function goPage(p){
   document.getElementById('topbar-title').textContent = pageTitles[p];
   closeMobileNav();
   if(p==='knowledge') renderKnowledge();
+  if(p==='workflows') renderWorkflows();
   if(p==='conversations'){
     document.getElementById('omni-shell')?.classList.remove('thread-open');
     renderConversations();
@@ -573,10 +685,12 @@ function sendOmniReply(){
   const input = document.getElementById('omni-reply');
   let text = (input.value||'').trim();
   const agent = agents.find(a=>a.id===t.agentId);
+  let kb = null;
   if(!text && agent){
     const lastCustomer = [...t.messages].reverse().find(m=>m.from==='customer');
     if(lastCustomer){
-      text = groundedAnswer(lastCustomer.text, agent);
+      kb = answerFromSources(lastCustomer.text, agent);
+      text = kb.answer;
     }
   }
   if(!text){ showToast('Type a reply first'); return; }
@@ -584,6 +698,11 @@ function sendOmniReply(){
   t.updatedAt = Date.now();
   input.value = '';
   persistInbox();
+  if(agent){
+    const ctx = { agentId: agent.id, agentName: agent.name, channel: t.channel, thread: t, found: kb ? kb.found : true };
+    fireWorkflows('after_reply', ctx);
+    if(kb && kb.found === false) fireWorkflows('unknown_answer', ctx);
+  }
   renderConversations();
   openOmniThread(t.id);
   showToast(t.channel==='WhatsApp' ? 'WhatsApp reply sent (demo)' : 'Reply sent');
@@ -819,6 +938,9 @@ function askKnowledge(){
   if(!a){ box.innerHTML = '<div class="kb-answer-empty">Select an agent.</div>'; return; }
   const result = answerFromSources(q, a);
   persistAgents();
+  if(result.found === false){
+    fireWorkflows('unknown_answer', { agentId: a.id, agentName: a.name, channel: 'Knowledge', found: false });
+  }
   box.innerHTML = `<div class="title">${escapeHtml(a.name)}</div><div>${escapeHtml(result.answer).replace(/\n/g,'<br>')}</div>${result.cite?`<div class="cite">Source: ${escapeHtml(result.cite)}</div>`:''}${!result.found?'<div class="cite">Not found in knowledge</div>':''}`;
 }
 
@@ -905,6 +1027,131 @@ function renderAgentsGrid(){
       </div>
     </div>`).join('') + `
     <div class="create-card" onclick="openWizard()"><div class="plus">+</div><b>Create New Agent</b></div>`;
+}
+
+/* ---------------- WORKFLOWS ---------------- */
+function fillWorkflowAgentSelect(){
+  const sel = document.getElementById('wf-agent');
+  if(!sel) return;
+  const v = sel.value;
+  sel.innerHTML = '<option value="all">All agents</option>' +
+    agents.map(a=>`<option value="${a.id}">${escapeHtml(a.name)}</option>`).join('');
+  if(v) sel.value = v;
+}
+function renderWorkflows(){
+  fillWorkflowAgentSelect();
+  const list = document.getElementById('workflows-list');
+  const logEl = document.getElementById('workflows-log');
+  if(!list) return;
+  if(!workflows.length){
+    list.innerHTML = '<p style="font-size:12.5px;color:var(--muted);margin:0;">No workflows yet. Create one on the right.</p>';
+  } else {
+    list.innerHTML = workflows.map(w=>{
+      const agentName = w.agentId === 'all' ? 'All agents' : (agents.find(a=>a.id===w.agentId)?.name || 'Deleted agent');
+      return `<div class="wf-item ${w.enabled?'':'off'}">
+        <div class="wf-main">
+          <div class="wf-title">${escapeHtml(w.name)}</div>
+          <div class="wf-meta">When <b>${escapeHtml(WF_TRIGGERS[w.trigger]||w.trigger)}</b> → <b>${escapeHtml(WF_ACTIONS[w.action]||w.action)}</b></div>
+          <div class="wf-meta">${escapeHtml(agentName)} · ${(w.runs||0)} run${(w.runs||0)===1?'':'s'}</div>
+        </div>
+        <label class="wf-switch" title="Enable">
+          <input type="checkbox" ${w.enabled?'checked':''} onchange="toggleWorkflow('${w.id}', this.checked)">
+          <span></span>
+        </label>
+        <button type="button" class="rm" onclick="deleteWorkflow('${w.id}')" title="Delete">✕</button>
+      </div>`;
+    }).join('');
+  }
+  if(logEl){
+    if(!workflowLog.length){
+      logEl.innerHTML = '<p style="font-size:12.5px;color:var(--muted);margin:0;">Runs will appear here when triggers fire.</p>';
+    } else {
+      logEl.innerHTML = workflowLog.slice(0,12).map(e=>`
+        <div class="wf-log-row">
+          <div class="wf-log-name">${escapeHtml(e.name)}</div>
+          <div class="wf-log-msg">${escapeHtml(e.message)}</div>
+          <div class="wf-log-time">${new Date(e.at).toLocaleString()}</div>
+        </div>`).join('');
+    }
+  }
+}
+function createWorkflow(){
+  const name = (document.getElementById('wf-name')?.value || '').trim();
+  const agentId = document.getElementById('wf-agent')?.value || 'all';
+  const trigger = document.getElementById('wf-trigger')?.value || 'after_reply';
+  const action = document.getElementById('wf-action')?.value || 'notify_team';
+  if(!name){ showToast('Enter a workflow name'); return; }
+  workflows.unshift({
+    id: 'wf_' + Math.random().toString(36).slice(2,10),
+    name, agentId, trigger, action,
+    enabled: true, runs: 0, createdAt: Date.now()
+  });
+  document.getElementById('wf-name').value = '';
+  persistWorkflows();
+  renderWorkflows();
+  showToast('Workflow added');
+}
+function toggleWorkflow(id, on){
+  const w = workflows.find(x=>x.id===id); if(!w) return;
+  w.enabled = !!on;
+  persistWorkflows();
+  renderWorkflows();
+}
+function deleteWorkflow(id){
+  workflows = workflows.filter(w=>w.id!==id);
+  persistWorkflows();
+  renderWorkflows();
+  showToast('Workflow removed');
+}
+function clearWorkflowLog(){
+  workflowLog = [];
+  persistWorkflowLog();
+  renderWorkflows();
+}
+function actionMessage(action, ctx){
+  const agent = ctx.agentName || 'Agent';
+  const channel = ctx.channel || 'chat';
+  switch(action){
+    case 'notify_team': return `Notified team about ${agent} reply on ${channel}`;
+    case 'escalate': return `Escalated to human inbox (${agent}${ctx.found===false?' · unknown answer':''})`;
+    case 'tag_thread': return `Tagged conversation for ${agent}`;
+    case 'crm_log': return `Logged outcome to CRM for ${agent}`;
+    case 'follow_up': return `Queued follow-up for ${agent}`;
+    default: return `Ran action ${action}`;
+  }
+}
+function applyWorkflowSideEffects(action, ctx){
+  if(!ctx.thread) return;
+  if(action === 'escalate'){
+    ctx.thread.escalated = true;
+    ctx.thread.tag = ctx.thread.tag || 'Escalated';
+  }
+  if(action === 'tag_thread'){
+    ctx.thread.tag = ctx.tag || 'Workflow';
+  }
+}
+function fireWorkflows(trigger, ctx){
+  const agentId = ctx.agentId || null;
+  const matches = workflows.filter(w=>
+    w.enabled &&
+    w.trigger === trigger &&
+    (w.agentId === 'all' || w.agentId === agentId)
+  );
+  if(!matches.length) return;
+  matches.forEach(w=>{
+    w.runs = (w.runs || 0) + 1;
+    applyWorkflowSideEffects(w.action, ctx);
+    workflowLog.unshift({
+      id: 'run_' + Math.random().toString(36).slice(2,8),
+      workflowId: w.id,
+      name: w.name,
+      message: actionMessage(w.action, ctx),
+      at: Date.now()
+    });
+  });
+  persistWorkflows();
+  persistWorkflowLog();
+  if(ctx.thread) persistInbox();
 }
 
 /* ---------------- INTEGRATIONS ---------------- */
@@ -1394,6 +1641,7 @@ function renderEmbedPanel(){
   document.getElementById('wp-chat-sub').textContent = a.role + ' · Online';
   const body = document.getElementById('wp-chat-body');
   body.innerHTML = `<div class="bubble bot">${escapeHtml(roleIntro[a.role] || 'Hi! How can I help you today?')}</div>`;
+  syncWidgetPreviewMic();
   toggleWidgetPreview(false);
 }
 
@@ -1472,10 +1720,14 @@ function simulateWhatsAppIncoming(fromInbox){
     messages: [{from:'customer', text, at:Date.now()}]
   };
   if(a.whatsapp.autoReply !== false){
-    const answer = groundedAnswer(text, a);
-    thread.messages.push({from:'agent', text:answer, at:Date.now()+1});
+    const kb = answerFromSources(text, a);
+    thread.messages.push({from:'agent', text:kb.answer, at:Date.now()+1});
+    const ctx = { agentId: a.id, agentName: a.name, channel: 'WhatsApp', thread, found: kb.found };
+    fireWorkflows('after_reply', ctx);
+    if(kb.found === false) fireWorkflows('unknown_answer', ctx);
   }
   inbox.unshift(thread);
+  fireWorkflows('new_conversation', { agentId: a.id, agentName: a.name, channel: 'WhatsApp', thread });
   persistInbox();
   activeThreadId = thread.id;
   omniFilter = fromInbox ? omniFilter : 'WhatsApp';
@@ -1515,9 +1767,119 @@ function sendWidgetPreview(){
   body.scrollTop = body.scrollHeight;
   setTimeout(()=>{
     const typing = document.getElementById('wp-typing'); if(typing) typing.remove();
-    const answer = groundedAnswer(q, a);
+    const kb = answerFromSources(q, a);
+    body.innerHTML += `<div class="bubble bot">${escapeHtml(kb.answer)}</div>`;
+    body.scrollTop = body.scrollHeight;
+    const ctx = { agentId: a.id, agentName: a.name, channel: 'Web Chat', found: kb.found };
+    fireWorkflows('after_reply', ctx);
+    if(kb.found === false) fireWorkflows('unknown_answer', ctx);
+  }, 700);
+}
+function stopWpMic(){
+  if(wpMicTimer){ clearInterval(wpMicTimer); wpMicTimer = null; }
+  if(wpMicRecognition){
+    try{ wpMicRecognition.stop(); }catch(e){}
+    wpMicRecognition = null;
+  }
+  if(wpMicStream){
+    wpMicStream.getTracks().forEach(t=>t.stop());
+    wpMicStream = null;
+  }
+  wpMicRecorder = null;
+  wpMicRecording = false;
+  const btn = document.getElementById('wp-mic-btn');
+  if(btn) btn.classList.remove('recording');
+}
+async function toggleWidgetPreviewMic(){
+  const a = agents.find(x=>x.id===activeDetailId); if(!a) return;
+  normalizeAgent(a);
+  if(!a.voiceNotes.enabled || !a.voiceNotes.widgetMic){
+    showToast('Enable voice notes + widget mic in Voice tab');
+    return;
+  }
+  if(wpMicRecording && wpMicRecorder){
+    wpMicRecorder.stop();
+    return;
+  }
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    showToast('Microphone not available in this browser');
+    return;
+  }
+  try{
+    wpMicStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    wpMicChunks = [];
+    wpMicTranscript = '';
+    wpMicRecording = true;
+    wpMicRecorder = new MediaRecorder(wpMicStream);
+    const btn = document.getElementById('wp-mic-btn');
+    if(btn) btn.classList.add('recording');
+    wpMicRecorder.ondataavailable = e=>{ if(e.data && e.data.size) wpMicChunks.push(e.data); };
+    wpMicRecorder.onstop = ()=>{
+      const secs = wpMicSeconds;
+      const transcript = (wpMicTranscript || '').trim();
+      const blob = new Blob(wpMicChunks, { type: 'audio/webm' });
+      const url = URL.createObjectURL(blob);
+      stopWpMic();
+      handleWidgetVoiceNote(a, url, secs, transcript);
+    };
+    wpMicRecorder.start();
+    wpMicSeconds = 0;
+    wpMicTimer = setInterval(()=>{
+      wpMicSeconds++;
+      if(wpMicSeconds >= (a.voiceNotes.maxSeconds || 60) && wpMicRecorder && wpMicRecorder.state === 'recording'){
+        wpMicRecorder.stop();
+        showToast('Max voice note length reached');
+      }
+    }, 1000);
+    if(a.voiceNotes.transcribe){
+      const rec = getSpeechRecognition();
+      if(rec){
+        wpMicRecognition = rec;
+        rec.continuous = true;
+        rec.interimResults = true;
+        rec.onresult = ev=>{
+          let final = '';
+          for(let i = 0; i < ev.results.length; i++){
+            final += ev.results[i][0].transcript + ' ';
+          }
+          wpMicTranscript = final.trim();
+        };
+        try{ rec.start(); }catch(e){}
+      }
+    }
+    showToast('Recording… tap mic again to send');
+  }catch(err){
+    stopWpMic();
+    showToast(err.message || 'Could not access microphone');
+  }
+}
+function handleWidgetVoiceNote(a, audioUrl, seconds, transcript){
+  const body = document.getElementById('wp-chat-body');
+  if(!body) return;
+  const label = transcript
+    ? escapeHtml(transcript)
+    : (a.voiceNotes.transcribe ? '(No speech detected)' : 'Voice note');
+  body.innerHTML += `<div class="bubble user"><div class="wp-voice-bubble">🎤 ${formatVnTime(seconds)} · ${label}<audio src="${audioUrl}" controls></audio></div></div>`;
+  body.innerHTML += `<div class="demo-typing" id="wp-typing"><span></span><span></span><span></span></div>`;
+  body.scrollTop = body.scrollHeight;
+  setTimeout(()=>{
+    const typing = document.getElementById('wp-typing'); if(typing) typing.remove();
+    let answer;
+    let found = false;
+    if(!a.voiceNotes.transcribe){
+      answer = 'I received your voice note (' + formatVnTime(seconds) + '). Enable “Transcribe voice notes” in Voice settings so I can answer from your knowledge.';
+    } else if(!transcript){
+      answer = 'I got your voice note but couldn’t transcribe it. Try again or type your question.';
+    } else {
+      const kb = answerFromSources(transcript, a);
+      answer = kb.answer;
+      found = kb.found;
+    }
     body.innerHTML += `<div class="bubble bot">${escapeHtml(answer)}</div>`;
     body.scrollTop = body.scrollHeight;
+    const ctx = { agentId: a.id, agentName: a.name, channel: 'Web Chat', found };
+    fireWorkflows('after_reply', ctx);
+    if(a.voiceNotes.transcribe && transcript && found === false) fireWorkflows('unknown_answer', ctx);
   }, 700);
 }
 
@@ -1580,6 +1942,49 @@ function syncCampaignStats(c){
       stopBtn.disabled = !c.running;
     }
   });
+}
+function createCallAgentFromVoice(role){
+  if(!isCallAgentRole(role)) return;
+  const id = genAgentId();
+  const isInbound = role === 'Inbound Call Agent';
+  const isOutbound = role === 'Outbound Call Agent';
+  const newAgent = {
+    id,
+    name: role,
+    role,
+    industry: 'Clinic',
+    language: 'English',
+    voice: 'Emma (Natural)',
+    status: 'Active',
+    channels: ['Voice', 'Phone'],
+    resolved: '0',
+    rate: '—',
+    sources: [],
+    whatsapp: { connected:false, phone:'', autoReply:true, demo:true },
+    voiceCalling: {
+      inbound: isInbound,
+      outbound: isOutbound,
+      demo: true,
+      campaign: {
+        name: isOutbound ? 'Lead Follow-up' : 'Renewal Campaign',
+        audience: isOutbound ? 'New leads this week' : 'Expiring in 30 days',
+        total: 0, completed: 0, successful: 0, running: false
+      }
+    }
+  };
+  agents.unshift(newAgent);
+  reindexAgent(newAgent);
+  persistAgents();
+  activeDetailId = id;
+  renderAgentsGrid();
+  renderOverview();
+  renderKnowledge();
+  renderIntegrations();
+  renderAIVoicePage();
+  const sel = document.getElementById('vp-agent');
+  if(sel) sel.value = id;
+  onVoicePageAgentChange();
+  showToast(isInbound ? 'Inbound call agent created' : 'Outbound call agent created');
 }
 function renderAIVoicePage(){
   const sel = document.getElementById('vp-agent');
@@ -1647,6 +2052,7 @@ function renderVoicePanel(){
   const a = agents.find(x=>x.id===activeDetailId); if(!a) return;
   normalizeAgent(a);
   const vc = a.voiceCalling;
+  const vn = a.voiceNotes;
   const inEl = document.getElementById('voice-inbound-toggle');
   const outEl = document.getElementById('voice-outbound-toggle');
   const pill = document.getElementById('voice-status-pill');
@@ -1661,7 +2067,143 @@ function renderVoicePanel(){
       pill.classList.remove('on');
     }
   }
+  const en = document.getElementById('vn-enabled');
+  const tr = document.getElementById('vn-transcribe');
+  const mic = document.getElementById('vn-widget-mic');
+  const max = document.getElementById('vn-max-seconds');
+  if(en) en.checked = !!vn.enabled;
+  if(tr) tr.checked = !!vn.transcribe;
+  if(mic) mic.checked = !!vn.widgetMic;
+  if(max) max.value = String(vn.maxSeconds || 60);
+  const demo = document.getElementById('vn-demo');
+  if(demo) demo.classList.toggle('disabled', !vn.enabled);
+  const recBtn = document.getElementById('vn-rec-btn');
+  if(recBtn && !vnDemoRecorder) recBtn.disabled = !vn.enabled;
+  syncWidgetPreviewMic();
   syncCampaignStats(vc.campaign);
+}
+function saveVoiceNoteSettings(){
+  const a = agents.find(x=>x.id===activeDetailId); if(!a) return;
+  normalizeAgent(a);
+  a.voiceNotes.enabled = !!document.getElementById('vn-enabled')?.checked;
+  a.voiceNotes.transcribe = !!document.getElementById('vn-transcribe')?.checked;
+  a.voiceNotes.widgetMic = !!document.getElementById('vn-widget-mic')?.checked;
+  a.voiceNotes.maxSeconds = Number(document.getElementById('vn-max-seconds')?.value) || 60;
+  persistAgents();
+  renderVoicePanel();
+  renderEmbedPanel();
+  showToast('Voice note settings saved');
+}
+function syncWidgetPreviewMic(){
+  const a = agents.find(x=>x.id===activeDetailId);
+  const btn = document.getElementById('wp-mic-btn');
+  if(!btn) return;
+  const show = !!(a && a.voiceNotes?.enabled && a.voiceNotes?.widgetMic);
+  btn.classList.toggle('hidden', !show);
+}
+function formatVnTime(sec){
+  const s = Math.max(0, Number(sec) || 0);
+  return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+}
+function getSpeechRecognition(){
+  const Ctor = window.SpeechRecognition || window.webkitSpeechRecognition;
+  return Ctor ? new Ctor() : null;
+}
+function stopVnDemoStreams(){
+  if(vnDemoTimer){ clearInterval(vnDemoTimer); vnDemoTimer = null; }
+  if(vnDemoRecognition){
+    try{ vnDemoRecognition.stop(); }catch(e){}
+    vnDemoRecognition = null;
+  }
+  if(vnDemoStream){
+    vnDemoStream.getTracks().forEach(t=>t.stop());
+    vnDemoStream = null;
+  }
+  vnDemoRecorder = null;
+}
+async function toggleVoiceNoteDemoRecord(){
+  const a = agents.find(x=>x.id===activeDetailId); if(!a) return;
+  normalizeAgent(a);
+  if(!a.voiceNotes.enabled){ showToast('Enable voice notes first'); return; }
+  if(vnDemoRecorder && vnDemoRecorder.state === 'recording'){
+    vnDemoRecorder.stop();
+    return;
+  }
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    showToast('Microphone not available in this browser');
+    return;
+  }
+  try{
+    vnDemoStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    vnDemoChunks = [];
+    vnDemoTranscript = '';
+    vnDemoRecorder = new MediaRecorder(vnDemoStream);
+    vnDemoRecorder.ondataavailable = e=>{ if(e.data && e.data.size) vnDemoChunks.push(e.data); };
+    vnDemoRecorder.onstop = ()=>{
+      stopVnDemoStreams();
+      const blob = new Blob(vnDemoChunks, { type: 'audio/webm' });
+      if(vnDemoUrl) URL.revokeObjectURL(vnDemoUrl);
+      vnDemoUrl = URL.createObjectURL(blob);
+      const audio = document.getElementById('vn-demo-audio');
+      if(audio){ audio.src = vnDemoUrl; audio.classList.remove('hidden'); }
+      const playBtn = document.getElementById('vn-play-btn');
+      if(playBtn) playBtn.disabled = false;
+      const recBtn = document.getElementById('vn-rec-btn');
+      if(recBtn){ recBtn.classList.remove('recording'); recBtn.textContent = 'Hold / tap to record'; recBtn.disabled = !a.voiceNotes.enabled; }
+      const status = document.getElementById('vn-demo-status');
+      if(status) status.textContent = 'Recording saved';
+      const txEl = document.getElementById('vn-demo-transcript');
+      let text = (vnDemoTranscript || '').trim();
+      if(a.voiceNotes.transcribe){
+        if(!text) text = '(Demo) No speech detected — try again or type in chat.';
+        if(txEl){ txEl.style.display = 'block'; txEl.textContent = 'Transcript: ' + text; }
+      } else if(txEl){
+        txEl.style.display = 'block';
+        txEl.textContent = 'Transcription is off — audio only (' + formatVnTime(vnDemoSeconds) + ').';
+      }
+    };
+    vnDemoRecorder.start();
+    vnDemoSeconds = 0;
+    const status = document.getElementById('vn-demo-status');
+    const timer = document.getElementById('vn-demo-timer');
+    const recBtn = document.getElementById('vn-rec-btn');
+    if(status) status.textContent = 'Recording… tap again to stop';
+    if(recBtn){ recBtn.classList.add('recording'); recBtn.textContent = 'Stop recording'; }
+    if(timer) timer.textContent = '0:00';
+    vnDemoTimer = setInterval(()=>{
+      vnDemoSeconds++;
+      if(timer) timer.textContent = formatVnTime(vnDemoSeconds);
+      if(vnDemoSeconds >= (a.voiceNotes.maxSeconds || 60) && vnDemoRecorder && vnDemoRecorder.state === 'recording'){
+        vnDemoRecorder.stop();
+        showToast('Max voice note length reached');
+      }
+    }, 1000);
+    if(a.voiceNotes.transcribe){
+      const rec = getSpeechRecognition();
+      if(rec){
+        vnDemoRecognition = rec;
+        rec.continuous = true;
+        rec.interimResults = true;
+        rec.onresult = ev=>{
+          let final = '';
+          for(let i = 0; i < ev.results.length; i++){
+            final += ev.results[i][0].transcript + ' ';
+          }
+          vnDemoTranscript = final.trim();
+        };
+        try{ rec.start(); }catch(e){}
+      }
+    }
+  }catch(err){
+    stopVnDemoStreams();
+    showToast(err.message || 'Could not access microphone');
+  }
+}
+function playVoiceNoteDemo(){
+  const audio = document.getElementById('vn-demo-audio');
+  if(!audio || !audio.src){ showToast('Record a voice note first'); return; }
+  audio.classList.remove('hidden');
+  audio.play().catch(()=>showToast('Could not play audio'));
 }
 function toggleVoiceInbound(on){
   const a = agents.find(x=>x.id===activeDetailId); if(!a) return;
@@ -1766,7 +2308,9 @@ function acceptIncomingCall(){
   document.getElementById('call-live').classList.remove('hidden');
   const a = agents.find(x=>x.id===pendingCall.agentId);
   const greet = roleIntro[a?.role] || 'Hi! Thanks for calling. How can I help you today?';
-  const reply = a ? groundedAnswer(pendingCall.question, a) : "I've noted your request and will take care of it.";
+  const kb = a ? answerFromSources(pendingCall.question, a) : { answer: "I've noted your request and will take care of it.", found: false };
+  const reply = kb.answer;
+  pendingCall.kbFound = kb.found;
   const transcript = document.getElementById('call-transcript');
   transcript.textContent = 'Connecting…';
   callSeconds = 0;
@@ -1779,13 +2323,30 @@ function acceptIncomingCall(){
   }, 1000);
   setTimeout(()=>{ transcript.textContent = 'AI: ' + greet; }, 400);
   setTimeout(()=>{ transcript.textContent = 'Caller: ' + pendingCall.question; }, 1600);
-  setTimeout(()=>{ transcript.textContent = 'AI: ' + reply; pendingCall.answer = reply; }, 2800);
+  setTimeout(()=>{
+    transcript.textContent = 'AI: ' + reply;
+    pendingCall.answer = reply;
+    if(a){
+      const ctx = { agentId: a.id, agentName: a.name, channel: 'Phone', found: kb.found };
+      fireWorkflows('after_reply', ctx);
+      if(kb.found === false) fireWorkflows('unknown_answer', ctx);
+    }
+  }, 2800);
 }
 function endActiveCall(){
   clearInterval(callTimer); callTimer = null;
   document.getElementById('call-overlay').classList.add('hidden');
   if(pendingCall){
+    const a = agents.find(x=>x.id===pendingCall.agentId);
     logPhoneCall(pendingCall, true, pendingCall.answer || 'Call completed');
+    if(a){
+      fireWorkflows('call_ended', {
+        agentId: a.id,
+        agentName: a.name,
+        channel: 'Phone',
+        found: pendingCall.kbFound
+      });
+    }
     pendingCall = null;
   }
   showToast('Call ended — logged in Omni inbox');

@@ -211,8 +211,31 @@
   .wp-chat-sub{font-size:11px; color:#AEB1C6;}
   .wp-chat-close{border:none; background:rgba(255,255,255,0.12); color:#fff; width:24px; height:24px; border-radius:6px; cursor:pointer;}
   .wp-chat-body{flex:1; padding:12px; background:#F8F8FC; overflow:auto; display:flex; flex-direction:column; gap:8px;}
-  .wp-chat-foot{display:flex; gap:6px; padding:10px; border-top:1px solid var(--line); background:#fff;}
+  .wp-chat-foot{display:flex; gap:6px; padding:10px; border-top:1px solid var(--line); background:#fff; align-items:center;}
   .wp-chat-foot input{flex:1; border:1px solid var(--line); border-radius:8px; padding:8px 10px; font-size:12.5px; outline:none; min-width:0;}
+  .wp-mic-btn{
+    width:34px; height:34px; flex-shrink:0; border:1px solid var(--line); border-radius:8px;
+    background:#F6F7FB; cursor:pointer; font-size:15px; line-height:1;
+  }
+  .wp-mic-btn:hover{background:#EEF0FF; border-color:#C9CBE0;}
+  .wp-mic-btn.recording{background:#FEE2E2; border-color:#FECACA; animation:vnPulse 1s ease infinite;}
+  .wp-voice-bubble{
+    display:flex; align-items:center; gap:8px; font-size:12.5px;
+  }
+  .wp-voice-bubble audio{max-width:140px; height:28px;}
+
+  .vn-settings{display:flex; flex-direction:column; gap:12px; margin-top:4px;}
+  .vn-row{gap:10px;}
+  .vn-row span{font-weight:500; color:var(--text);}
+  .vn-max-field{margin:0; max-width:220px;}
+  .vn-demo{
+    margin-top:16px; padding-top:14px; border-top:1px solid var(--line);
+  }
+  .vn-demo.disabled{opacity:.55;}
+  .vn-demo-head{display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; font-size:12.5px; color:var(--muted);}
+  .vn-timer{font-variant-numeric:tabular-nums; font-weight:600; color:var(--text);}
+  #vn-rec-btn.recording{background:#DC2626; border-color:#DC2626;}
+  @keyframes vnPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}
 
   /* Live preview panel (persistent, reused) */
   .preview-panel{position:sticky; top:0;}
@@ -376,6 +399,8 @@
   /* AI Voice page (screenshot layout) */
   .voice-page-header{align-items:flex-end;}
   .voice-agent-field{margin:0; min-width:240px; max-width:280px;}
+  .voice-create-card{margin-bottom:16px;}
+  .voice-role-grid{grid-template-columns:repeat(2,minmax(0,280px)); max-width:580px;}
   .voice-page-title{display:flex; align-items:center; gap:12px; margin:0 0 4px;}
   .voice-step-badge{width:28px;height:28px;border-radius:8px; background:var(--grad); color:#fff; display:inline-flex; align-items:center; justify-content:center; font-size:14px; font-weight:700; flex-shrink:0;}
 
@@ -525,6 +550,7 @@
   @media (max-width:760px){
     .voice-page-header{flex-direction:column; align-items:stretch;}
     .voice-agent-field{max-width:none; width:100%;}
+    .voice-role-grid{grid-template-columns:1fr; max-width:none;}
     .voice-first-layout{
       grid-template-columns:1fr;
       grid-template-areas:
@@ -937,3 +963,34 @@
     }
     #page-profile .page-header .btn{width:100%;}
   }
+
+  /* ---------- WORKFLOWS ---------- */
+  .wf-item{
+    display:flex; align-items:flex-start; gap:10px;
+    padding:12px 0; border-bottom:1px solid var(--line);
+  }
+  .wf-item:last-child{border-bottom:none;}
+  .wf-item.off{opacity:.55;}
+  .wf-main{flex:1; min-width:0;}
+  .wf-title{font-size:13.5px; font-weight:600; color:var(--text);}
+  .wf-meta{font-size:12px; color:var(--muted); margin-top:3px; line-height:1.4;}
+  .wf-meta b{color:var(--text); font-weight:600;}
+  .wf-switch{
+    position:relative; width:36px; height:20px; flex-shrink:0; margin-top:2px; cursor:pointer;
+  }
+  .wf-switch input{opacity:0; width:0; height:0; position:absolute;}
+  .wf-switch span{
+    position:absolute; inset:0; background:#D5D8E6; border-radius:999px; transition:background .15s ease;
+  }
+  .wf-switch span::after{
+    content:''; position:absolute; width:14px; height:14px; border-radius:50%;
+    background:#fff; top:3px; left:3px; transition:transform .15s ease;
+    box-shadow:0 1px 3px rgba(15,20,36,.2);
+  }
+  .wf-switch input:checked + span{background:var(--indigo);}
+  .wf-switch input:checked + span::after{transform:translateX(16px);}
+  .wf-log-row{padding:10px 0; border-bottom:1px solid var(--line);}
+  .wf-log-row:last-child{border-bottom:none;}
+  .wf-log-name{font-size:12.5px; font-weight:600;}
+  .wf-log-msg{font-size:12px; color:var(--muted); margin-top:2px;}
+  .wf-log-time{font-size:11px; color:var(--muted-2); margin-top:4px;}

@@ -274,6 +274,7 @@
                     </div>
                     <div class="wp-chat-body" id="wp-chat-body"></div>
                     <div class="wp-chat-foot">
+                      <button type="button" class="wp-mic-btn hidden" id="wp-mic-btn" title="Voice note" aria-label="Record voice note" onclick="toggleWidgetPreviewMic()">🎤</button>
                       <input type="text" id="wp-chat-input" placeholder="Type a message…" onkeydown="if(event.key==='Enter')sendWidgetPreview()">
                       <button type="button" class="btn btn-primary btn-sm" onclick="sendWidgetPreview()">Send</button>
                     </div>
@@ -327,6 +328,51 @@
               <span class="wa-status" id="voice-status-pill">Off</span>
             </div>
           </div>
+
+          <div class="card" style="margin-top:16px;">
+            <div class="card-head">
+              <h3>Voice notes</h3>
+              <span class="soon-pill" style="background:#EEF0FF;color:var(--indigo); margin-left:0;">Demo</span>
+            </div>
+            <p class="hint-text" style="margin-top:0;">Let customers send short voice messages in chat. Transcription uses the browser Speech API when available.</p>
+            <div class="vn-settings">
+              <label class="voice-toggle vn-row">
+                <input type="checkbox" id="vn-enabled" onchange="saveVoiceNoteSettings()">
+                <span>Enable voice notes</span>
+              </label>
+              <label class="voice-toggle vn-row">
+                <input type="checkbox" id="vn-transcribe" onchange="saveVoiceNoteSettings()">
+                <span>Transcribe voice notes (demo)</span>
+              </label>
+              <label class="voice-toggle vn-row">
+                <input type="checkbox" id="vn-widget-mic" onchange="saveVoiceNoteSettings()">
+                <span>Show mic in website widget</span>
+              </label>
+              <div class="field vn-max-field">
+                <label for="vn-max-seconds">Max length</label>
+                <select id="vn-max-seconds" onchange="saveVoiceNoteSettings()">
+                  <option value="15">15 seconds</option>
+                  <option value="30">30 seconds</option>
+                  <option value="60">60 seconds</option>
+                  <option value="90">90 seconds</option>
+                  <option value="120">120 seconds</option>
+                </select>
+              </div>
+            </div>
+            <div class="vn-demo" id="vn-demo">
+              <div class="vn-demo-head">
+                <span id="vn-demo-status">Ready to test</span>
+                <span class="vn-timer" id="vn-demo-timer">0:00</span>
+              </div>
+              <div class="embed-actions">
+                <button type="button" class="btn btn-primary btn-sm" id="vn-rec-btn" onclick="toggleVoiceNoteDemoRecord()">Hold / tap to record</button>
+                <button type="button" class="btn btn-outline btn-sm" id="vn-play-btn" onclick="playVoiceNoteDemo()" disabled>Play last note</button>
+              </div>
+              <p class="hint-text" id="vn-demo-transcript" style="display:none;"></p>
+              <audio id="vn-demo-audio" class="hidden" controls></audio>
+            </div>
+          </div>
+
           <div class="grid-2" style="margin-top:16px;">
             <div class="card">
               <div class="card-head"><h3>Inbound Calls</h3></div>
@@ -477,6 +523,18 @@
           </div>
         </div>
         <div class="demo-banner">Demo mode — calls are simulated. Production needs a telephony provider (e.g. Twilio).</div>
+        <div class="card voice-create-card">
+          <div class="card-head"><h3>Create call agent</h3></div>
+          <p class="hint-text" style="margin-top:0;">Call agents live under AI Voice — not in the general Create Agent wizard.</p>
+          <div class="role-grid voice-role-grid" id="voice-role-grid">
+            <div class="role-opt" role="button" tabindex="0" onclick="createCallAgentFromVoice('Inbound Call Agent')" onkeydown="if(event.key==='Enter')createCallAgentFromVoice('Inbound Call Agent')">
+              <div class="ic">📞</div><div class="t">Inbound Call Agent</div>
+            </div>
+            <div class="role-opt" role="button" tabindex="0" onclick="createCallAgentFromVoice('Outbound Call Agent')" onkeydown="if(event.key==='Enter')createCallAgentFromVoice('Outbound Call Agent')">
+              <div class="ic">📲</div><div class="t">Outbound Call Agent</div>
+            </div>
+          </div>
+        </div>
         <div class="voice-first-layout">
           <div class="voice-col voice-col-inbound">
             <div class="voice-col-body">
@@ -553,8 +611,59 @@
 
       <!-- WORKFLOWS -->
       <div id="page-workflows" class="page hidden">
-        <div class="page-header"><div><h2>Workflows</h2><p>Automate what happens after your agent replies.</p></div></div>
-        <div class="placeholder-card"><b>No-code workflow builder</b>Drag, drop and connect actions — coming to this workspace soon.</div>
+        <div class="page-header">
+          <div>
+            <h2>Workflows</h2>
+            <p>Automate what happens after your agent replies — notify, escalate, tag, or log outcomes.</p>
+          </div>
+        </div>
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-head"><h3>Your workflows</h3></div>
+            <div id="workflows-list"></div>
+          </div>
+          <div>
+            <div class="card">
+              <div class="card-head"><h3>Create workflow</h3></div>
+              <div class="field">
+                <label for="wf-name">Name</label>
+                <input type="text" id="wf-name" placeholder="e.g. Escalate when unknown">
+              </div>
+              <div class="field">
+                <label for="wf-agent">Agent</label>
+                <select id="wf-agent"></select>
+              </div>
+              <div class="field">
+                <label for="wf-trigger">When</label>
+                <select id="wf-trigger">
+                  <option value="after_reply">Agent sends a reply</option>
+                  <option value="unknown_answer">Knowledge cannot answer</option>
+                  <option value="new_conversation">New conversation starts</option>
+                  <option value="call_ended">Call ends</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="wf-action">Then</label>
+                <select id="wf-action">
+                  <option value="notify_team">Notify team (demo)</option>
+                  <option value="escalate">Escalate to human inbox</option>
+                  <option value="tag_thread">Tag conversation</option>
+                  <option value="crm_log">Log to CRM (demo)</option>
+                  <option value="follow_up">Queue follow-up</option>
+                </select>
+              </div>
+              <button type="button" class="btn btn-primary btn-sm" onclick="createWorkflow()">Add workflow</button>
+              <p class="hint-text">Runs locally in this demo when matching events fire (inbox, widget, WhatsApp, calls).</p>
+            </div>
+            <div class="card" style="margin-top:16px;">
+              <div class="card-head">
+                <h3>Recent runs</h3>
+                <a href="#" onclick="event.preventDefault(); clearWorkflowLog()">Clear</a>
+              </div>
+              <div id="workflows-log"></div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- KNOWLEDGE -->
@@ -745,8 +854,6 @@
             <div class="role-grid" id="role-grid">
               <div class="role-opt" data-role="Customer Service"><div class="ic">🎧</div><div class="t">Customer Service</div></div>
               <div class="role-opt" data-role="Sales"><div class="ic">💼</div><div class="t">Sales</div></div>
-              <div class="role-opt" data-role="Inbound Call Agent"><div class="ic">📞</div><div class="t">Inbound Call Agent</div></div>
-              <div class="role-opt" data-role="Outbound Call Agent"><div class="ic">📲</div><div class="t">Outbound Call Agent</div></div>
               <div class="role-opt" data-role="Virtual Receptionist"><div class="ic">🏢</div><div class="t">Virtual Receptionist</div></div>
               <div class="role-opt" data-role="Task Manager"><div class="ic">✅</div><div class="t">Task Manager</div></div>
               <div class="role-opt" data-role="HR"><div class="ic">🧑‍💼</div><div class="t">HR</div></div>
