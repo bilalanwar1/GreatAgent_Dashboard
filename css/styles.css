@@ -223,6 +223,20 @@
     display:flex; align-items:center; gap:8px; font-size:12.5px;
   }
   .wp-voice-bubble audio{max-width:140px; height:28px;}
+  .omni-voice-msg{display:flex; flex-direction:column; gap:8px; font-size:13px; line-height:1.4;}
+  .omni-voice-audio{width:min(220px,100%); height:32px;}
+  .omni-bubble.customer .omni-voice-audio{filter:none;}
+  .omni-voice-title{font-weight:600; font-size:12.5px;}
+  .omni-voice-tx{font-size:12.5px; opacity:.95;}
+  .omni-voice-missing{font-size:11.5px; color:var(--muted);}
+  .omni-bubble.agent .omni-voice-missing{color:rgba(255,255,255,.85);}
+  .vn-thread-pill{
+    display:inline-block; margin-left:6px; padding:1px 6px; border-radius:999px;
+    font-size:10px; font-weight:700; vertical-align:middle;
+    background:#EEF0FF; color:var(--indigo);
+  }
+  .omni-thread.voice-note .ch-badge{background:#EEF0FF;}
+  .omni-chat-head .vn-thread-pill{font-size:10px;}
 
   .vn-settings{display:flex; flex-direction:column; gap:12px; margin-top:4px;}
   .vn-row{gap:10px;}
@@ -994,3 +1008,59 @@
   .wf-log-name{font-size:12.5px; font-weight:600;}
   .wf-log-msg{font-size:12px; color:var(--muted); margin-top:2px;}
   .wf-log-time{font-size:11px; color:var(--muted-2); margin-top:4px;}
+
+  /* ---------- WORKFLOW CANVAS (n8n-style) ---------- */
+  .wf-canvas-card{overflow:hidden;}
+  .wf-canvas-toolbar{gap:12px; flex-wrap:wrap;}
+  .wf-canvas-controls{display:flex; align-items:center; gap:10px; flex-wrap:wrap;}
+  .wf-canvas-controls .field select{min-width:200px; padding:9px 12px; border:1px solid var(--line); border-radius:9px; font-size:13px; background:#fff;}
+  .wf-canvas-wrap{
+    position:relative; margin-top:12px; height:min(420px, 58vh); min-height:300px;
+    border-radius:12px; overflow:auto; border:1px solid #1a2035;
+    background:
+      radial-gradient(ellipse 60% 50% at 20% 40%, rgba(91,95,239,.18), transparent 55%),
+      radial-gradient(ellipse 40% 40% at 80% 60%, rgba(139,92,246,.12), transparent 50%),
+      linear-gradient(160deg, #0B0F19 0%, #12182a 50%, #0d1220 100%);
+  }
+  .wf-canvas-svg{display:block; min-width:100%; min-height:100%;}
+  .wf-canvas-empty{
+    position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    color:#AEB1C6; font-size:13.5px; z-index:1; pointer-events:none; padding:24px; text-align:center;
+  }
+  .wf-canvas-empty.hidden{display:none;}
+  .wf-legend{
+    display:flex; flex-wrap:wrap; gap:14px 18px; margin-top:12px;
+    font-size:12px; color:var(--muted); font-weight:500;
+  }
+  .wf-legend span{display:inline-flex; align-items:center; gap:6px;}
+  .wf-dot{width:10px; height:10px; border-radius:3px; display:inline-block;}
+  .wf-dot.trigger{background:#38BDF8;}
+  .wf-dot.knowledge{background:#A78BFA;}
+  .wf-dot.decide{background:#FBBF24;}
+  .wf-dot.action{background:#34D399;}
+  .wf-dot.output{background:#F472B6;}
+
+  .wf-node-rect{fill:rgba(255,255,255,.04); stroke:rgba(255,255,255,.75); stroke-width:1.5;}
+  .wf-node-rect.trigger{stroke:#38BDF8;}
+  .wf-node-rect.knowledge{stroke:#A78BFA;}
+  .wf-node-rect.decide{stroke:#FBBF24;}
+  .wf-node-rect.action{stroke:#34D399;}
+  .wf-node-rect.output{stroke:#F472B6; fill:rgba(244,114,182,.08);}
+  .wf-node-rect.active{
+    stroke:#5B5FEF; stroke-width:2.5; fill:rgba(91,95,239,.16);
+    filter:drop-shadow(0 0 10px rgba(91,95,239,.65));
+  }
+  .wf-node-label{fill:#F4F5FB; font-size:12px; font-weight:600; font-family:'Inter',system-ui,sans-serif;}
+  .wf-node-sub{fill:#AEB1C6; font-size:10px; font-family:'Inter',system-ui,sans-serif;}
+  .wf-edge{fill:none; stroke:rgba(255,255,255,.55); stroke-width:1.4;}
+  .wf-edge.active{stroke:#5B5FEF; stroke-width:2.2;}
+  .wf-edge-label{fill:#9498B6; font-size:10px; font-family:'Inter',system-ui,sans-serif;}
+  .wf-arrow{fill:rgba(255,255,255,.55);}
+  .wf-arrow.active{fill:#5B5FEF;}
+
+  @media (max-width:760px){
+    .wf-canvas-wrap{height:280px; min-height:240px;}
+    .wf-canvas-controls{width:100%;}
+    .wf-canvas-controls .field{flex:1; min-width:0;}
+    .wf-canvas-controls .field select{width:100%; min-width:0;}
+  }

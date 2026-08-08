@@ -367,9 +367,11 @@
               <div class="embed-actions">
                 <button type="button" class="btn btn-primary btn-sm" id="vn-rec-btn" onclick="toggleVoiceNoteDemoRecord()">Hold / tap to record</button>
                 <button type="button" class="btn btn-outline btn-sm" id="vn-play-btn" onclick="playVoiceNoteDemo()" disabled>Play last note</button>
+                <button type="button" class="btn btn-primary btn-sm" id="vn-send-btn" onclick="sendVoiceNoteDemoToInbox()" disabled>Send to Omni inbox</button>
               </div>
               <p class="hint-text" id="vn-demo-transcript" style="display:none;"></p>
               <audio id="vn-demo-audio" class="hidden" controls></audio>
+              <p class="hint-text">After recording, send to Omni to start a Web Chat conversation with this agent.</p>
             </div>
           </div>
 
@@ -614,17 +616,43 @@
         <div class="page-header">
           <div>
             <h2>Workflows</h2>
-            <p>Automate what happens after your agent replies — notify, escalate, tag, or log outcomes.</p>
+            <p>See the full agent journey — then add automations that run after replies, unknowns, and calls.</p>
           </div>
         </div>
-        <div class="grid-2">
+
+        <div class="card wf-canvas-card">
+          <div class="card-head wf-canvas-toolbar">
+            <h3>Agent workflow</h3>
+            <div class="wf-canvas-controls">
+              <div class="field" style="margin:0; min-width:200px;">
+                <label for="wf-canvas-agent" class="hidden">Agent</label>
+                <select id="wf-canvas-agent" onchange="onWorkflowCanvasAgentChange()"></select>
+              </div>
+              <button type="button" class="btn btn-outline btn-sm" onclick="simulateWorkflowCanvas()">Simulate run</button>
+            </div>
+          </div>
+          <p class="hint-text" id="wf-canvas-hint" style="margin-top:0;">Auto-built from this agent’s role, channels, knowledge, and enabled automations.</p>
+          <div class="wf-canvas-wrap" id="wf-canvas-wrap">
+            <div class="wf-canvas-empty" id="wf-canvas-empty">Create an agent to preview its workflow map.</div>
+            <svg id="wf-canvas-svg" class="wf-canvas-svg" xmlns="http://www.w3.org/2000/svg" aria-label="Agent workflow canvas"></svg>
+          </div>
+          <div class="wf-legend">
+            <span><i class="wf-dot trigger"></i> Trigger</span>
+            <span><i class="wf-dot knowledge"></i> Knowledge</span>
+            <span><i class="wf-dot decide"></i> Decide</span>
+            <span><i class="wf-dot action"></i> Action</span>
+            <span><i class="wf-dot output"></i> Output</span>
+          </div>
+        </div>
+
+        <div class="grid-2" style="margin-top:16px;">
           <div class="card">
-            <div class="card-head"><h3>Your workflows</h3></div>
+            <div class="card-head"><h3>Your automations</h3></div>
             <div id="workflows-list"></div>
           </div>
           <div>
             <div class="card">
-              <div class="card-head"><h3>Create workflow</h3></div>
+              <div class="card-head"><h3>Create automation</h3></div>
               <div class="field">
                 <label for="wf-name">Name</label>
                 <input type="text" id="wf-name" placeholder="e.g. Escalate when unknown">
@@ -653,7 +681,7 @@
                 </select>
               </div>
               <button type="button" class="btn btn-primary btn-sm" onclick="createWorkflow()">Add workflow</button>
-              <p class="hint-text">Runs locally in this demo when matching events fire (inbox, widget, WhatsApp, calls).</p>
+              <p class="hint-text">These appear as Action nodes on the canvas above when enabled.</p>
             </div>
             <div class="card" style="margin-top:16px;">
               <div class="card-head">

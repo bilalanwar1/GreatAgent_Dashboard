@@ -84,6 +84,8 @@ function normalizeAgent(a){
   a.voiceNotes.maxSeconds = [15,30,60,90,120].includes(maxSec) ? maxSec : 60;
   if(a.resolved == null) a.resolved = '0';
   if(a.rate == null) a.rate = '—';
+  if(!Array.isArray(a.sources)) a.sources = [];
+  if(!Array.isArray(a.channels)) a.channels = [];
   return a;
 }
 function sanitizeCampaign(c){
@@ -173,6 +175,7 @@ let vnDemoTimer = null;
 let vnDemoSeconds = 0;
 let vnDemoRecognition = null;
 let vnDemoTranscript = '';
+let vnDemoLastNote = null;
 let wpMicRecorder = null;
 let wpMicChunks = [];
 let wpMicStream = null;
@@ -605,6 +608,21 @@ function renderAnalytics(){
     }
   }
 }
+function threadListPreview(t){
+  const voiceMsg = (t.messages || []).find(m => m.type === 'voice' && m.from === 'customer');
+  if(voiceMsg || t.tag === 'Voice note'){
+    const tx = (voiceMsg && voiceMsg.transcript) ? String(voiceMsg.transcript).trim() : '';
+    const dur = voiceMsg ? formatVnTime(voiceMsg.duration || 0) : '';
+    if(tx) return '🎤 Voice note · ' + tx;
+    return '🎤 Voice note' + (dur ? ' · ' + dur : '');
+  }
+  const last = t.messages && t.messages[t.messages.length - 1];
+  if(!last) return '';
+  if(last.type === 'voice'){
+    return '🎤 Voice note' + (last.transcript ? ' · ' + last.transcript : '');
+  }
+  return last.text || '';
+}
 function renderConversations(){
   const list = document.getElementById('omni-thread-list');
   if(!list) return;
@@ -616,14 +634,16 @@ function renderConversations(){
   } else {
     list.innerHTML = threads.map(t=>{
       const meta = channelMeta[t.channel] || {icon:'💬', tag:''};
-      const last = t.messages[t.messages.length-1];
       const agent = agents.find(a=>a.id===t.agentId);
       const tagCls = t.channel==='WhatsApp'?'wa':(t.channel==='Web Chat'?'web':(t.channel==='Phone'?'phone':''));
-      return `<div class="omni-thread ${t.channel==='WhatsApp'?'wa':''} ${t.channel==='Phone'?'phone':''} ${t.id===activeThreadId?'active':''}" onclick="openOmniThread('${t.id}')">
-        <div class="ch-badge">${meta.icon}</div>
+      const hasVoice = (t.messages||[]).some(m=>m.type==='voice') || t.tag === 'Voice note';
+      const badge = hasVoice ? '🎤' : meta.icon;
+      const preview = threadListPreview(t);
+      return `<div class="omni-thread ${t.channel==='WhatsApp'?'wa':''} ${t.channel==='Phone'?'phone':''} ${hasVoice?'voice-note':''} ${t.id===activeThreadId?'active':''}" onclick="openOmniThread('${t.id}')">
+        <div class="ch-badge">${badge}</div>
         <div style="min-width:0;">
-          <div class="name">${escapeHtml(t.customer)}</div>
-          <div class="msg">${escapeHtml(last?last.text:'')}</div>
+          <div class="name">${escapeHtml(t.customer)}${hasVoice?' <span class="vn-thread-pill">Voice note</span>':''}</div>
+          <div class="msg">${escapeHtml(preview)}</div>
         </div>
         <div class="meta-right">
           <div class="time">${relTime(t.updatedAt)}</div>
@@ -664,18 +684,37 @@ function openOmniThread(id, keepOnly){
   document.getElementById('omni-active').classList.remove('hidden');
   document.getElementById('omni-shell')?.classList.add('thread-open');
   const meta = channelMeta[t.channel] || {icon:'💬'};
+  const hasVoice = (t.messages||[]).some(m=>m.type==='voice') || t.tag === 'Voice note';
   document.getElementById('omni-chat-head').innerHTML = `
     <button type="button" class="omni-back" onclick="closeOmniThreadMobile()" aria-label="Back to threads">←</button>
-    <div class="ch-badge">${meta.icon}</div>
+    <div class="ch-badge">${hasVoice ? '🎤' : meta.icon}</div>
     <div style="min-width:0;">
-      <div class="title">${escapeHtml(t.customer)}</div>
-      <div class="sub">${escapeHtml(t.channel)}${t.phone?' · '+escapeHtml(t.phone):''}</div>
+      <div class="title">${escapeHtml(t.customer)}${hasVoice?' <span class="vn-thread-pill">Voice note</span>':''}</div>
+      <div class="sub">${escapeHtml(t.channel)}${t.phone?' · '+escapeHtml(t.phone):''}${hasVoice?' · started with voice note':''}</div>
     </div>
     <span class="omni-agent-chip">${escapeHtml(agent?agent.name:'Unassigned')}</span>`;
   const body = document.getElementById('omni-chat-body');
   body.classList.toggle('wa-theme', t.channel==='WhatsApp');
-  body.innerHTML = t.messages.map(m=>`
-    <div class="omni-bubble ${m.from==='customer'?'customer':'agent'}">${escapeHtml(m.text)}</div>`).join('');
+  body.innerHTML = t.messages.map(m=>{
+    if(m.type === 'voice'){
+      const dur = formatVnTime(m.duration || 0);
+      const tx = (m.transcript || '').trim();
+      const label = tx
+        ? escapeHtml(tx)
+        : ('Voice note · ' + dur + ' · no transcript');
+      const audio = m.audioUrl
+        ? `<audio class="omni-voice-audio" src="${escapeHtml(m.audioUrl)}" controls preload="metadata"></audio>`
+        : '<span class="omni-voice-missing">Audio unavailable</span>';
+      return `<div class="omni-bubble ${m.from==='customer'?'customer':'agent'}">
+        <div class="omni-voice-msg">
+          <div class="omni-voice-title">🎤 Customer voice note · ${escapeHtml(dur)}</div>
+          <div class="omni-voice-tx">${label}</div>
+          ${audio}
+        </div>
+      </div>`;
+    }
+    return `<div class="omni-bubble ${m.from==='customer'?'customer':'agent'}">${escapeHtml(m.text)}</div>`;
+  }).join('');
   body.scrollTop = body.scrollHeight;
   const input = document.getElementById('omni-reply');
   if(input) input.placeholder = t.channel==='WhatsApp' ? 'Reply on WhatsApp (demo)…' : 'Reply as the AI agent…';
@@ -689,7 +728,10 @@ function sendOmniReply(){
   if(!text && agent){
     const lastCustomer = [...t.messages].reverse().find(m=>m.from==='customer');
     if(lastCustomer){
-      kb = answerFromSources(lastCustomer.text, agent);
+      const q = lastCustomer.type === 'voice'
+        ? ((lastCustomer.transcript || '').trim() || lastCustomer.text || '')
+        : lastCustomer.text;
+      kb = answerFromSources(q, agent);
       text = kb.answer;
     }
   }
@@ -920,6 +962,7 @@ async function addKnowledgeUrl(){
     reindexAgent(a);
     document.getElementById('kb-url').value = '';
     showToast('Website content extracted');
+    refreshWorkflowCanvasIfVisible();
   }catch(err){
     source.status = 'error';
     source.error = err.message || 'Extraction failed';
@@ -959,6 +1002,7 @@ async function addDetailUrl(){
     reindexAgent(a);
     document.getElementById('detail-url').value = '';
     showToast('Website content extracted');
+    refreshWorkflowCanvasIfVisible();
   }catch(err){
     source.status = 'error';
     source.error = err.message || 'Extraction failed';
@@ -1038,13 +1082,346 @@ function fillWorkflowAgentSelect(){
     agents.map(a=>`<option value="${a.id}">${escapeHtml(a.name)}</option>`).join('');
   if(v) sel.value = v;
 }
+function fillWorkflowCanvasAgentSelect(){
+  const sel = document.getElementById('wf-canvas-agent');
+  if(!sel) return;
+  const prev = sel.value || activeDetailId || agents[0]?.id || '';
+  sel.innerHTML = agents.map(a=>`<option value="${a.id}">${escapeHtml(a.name)} · ${escapeHtml(a.role)}</option>`).join('')
+    || '<option value="">No agents yet</option>';
+  if(prev && agents.some(a=>a.id===prev)) sel.value = prev;
+  else if(agents[0]) sel.value = agents[0].id;
+}
+function agentAutomations(agentId){
+  return workflows.filter(w=>w.enabled && (w.agentId==='all' || w.agentId===agentId));
+}
+function buildAgentFlowGraph(a){
+  normalizeAgent(a);
+  const nodes = [];
+  const edges = [];
+  const NW = 150, NH = 58, OW = 178, OH = 74;
+  const COL = [40, 230, 420, 610, 800, 1000, 1200];
+  const isCall = isCallAgentRole(a.role);
+  const channels = a.channels || [];
+  const hasWeb = channels.includes('Web Chat');
+  const hasWa = channels.includes('WhatsApp');
+  const hasPhone = channels.includes('Voice') || channels.includes('Phone');
+  const inboundOn = !!(a.voiceCalling && a.voiceCalling.inbound);
+  const outboundOn = !!(a.voiceCalling && a.voiceCalling.outbound);
+  const readySources = (a.sources || []).filter(s=>s.content && s.status!=='error' && String(s.content).trim().length > 20);
+  const hasKb = readySources.length > 0;
+  const kbLabel = hasKb
+    ? (readySources.length + ' source' + (readySources.length===1?'':'s'))
+    : 'Add URL or file';
+  const autos = agentAutomations(a.id);
+  const afterReply = autos.filter(w=>w.trigger==='after_reply');
+  const onUnknown = autos.filter(w=>w.trigger==='unknown_answer');
+  const onNew = autos.filter(w=>w.trigger==='new_conversation');
+  const onCallEnd = autos.filter(w=>w.trigger==='call_ended');
+
+  function addNode(id, type, label, sub, x, y, w, h){
+    nodes.push({ id, type, label, sub: sub || '', x, y, w: w || NW, h: h || NH });
+  }
+  function addEdge(from, to, label){
+    if(!from || !to) return;
+    if(edges.some(e=>e.from===from && e.to===to && e.label===(label||''))) return;
+    edges.push({ from, to, label: label || '' });
+  }
+
+  const triggerIds = [];
+  let ty = 36;
+  if(isCall){
+    if(a.role === 'Inbound Call Agent' || inboundOn){
+      addNode('t_in', 'trigger', 'Incoming call', 'Phone line', COL[0], ty);
+      triggerIds.push('t_in');
+      ty += 88;
+    }
+    if(a.role === 'Outbound Call Agent' || outboundOn){
+      addNode('t_out', 'trigger', 'Outbound dial', a.voiceCalling?.campaign?.name || 'Campaign', COL[0], ty);
+      triggerIds.push('t_out');
+      ty += 88;
+    }
+    if(!triggerIds.length){
+      addNode('t_call', 'trigger', 'Voice call', a.role, COL[0], ty);
+      triggerIds.push('t_call');
+      ty += 88;
+    }
+  } else {
+    if(hasWeb){
+      addNode('t_web', 'trigger', 'Website chat', 'Widget embed', COL[0], ty);
+      triggerIds.push('t_web');
+      ty += 88;
+    }
+    if(hasWa){
+      addNode('t_wa', 'trigger', 'WhatsApp', a.whatsapp?.connected ? 'Connected' : 'Channel', COL[0], ty);
+      triggerIds.push('t_wa');
+      ty += 88;
+    }
+    if(hasPhone || inboundOn || outboundOn){
+      addNode('t_voice', 'trigger', 'Voice / Phone', inboundOn || outboundOn ? 'Calling on' : 'Enabled', COL[0], ty);
+      triggerIds.push('t_voice');
+      ty += 88;
+    }
+    if(a.voiceNotes?.enabled){
+      addNode('t_vn', 'trigger', 'Voice note', 'Mic · ' + (a.voiceNotes.maxSeconds||60) + 's', COL[0], ty);
+      triggerIds.push('t_vn');
+      ty += 88;
+    }
+    if(!triggerIds.length){
+      addNode('t_web', 'trigger', 'Customer message', a.role || 'Agent', COL[0], ty);
+      triggerIds.push('t_web');
+    }
+  }
+
+  const midY = triggerIds.length === 1
+    ? (nodes.find(n=>n.id===triggerIds[0]).y)
+    : Math.round((nodes.filter(n=>triggerIds.includes(n.id)).reduce((s,n)=>s+n.y,0) / triggerIds.length));
+
+  const recvId = isCall ? 'greet' : 'recv';
+  addNode(recvId, 'action', isCall ? 'Greet caller' : 'Receive message', isCall ? (a.voice || 'AI voice') : a.role, COL[1], midY);
+  triggerIds.forEach(t=>addEdge(t, recvId));
+
+  onNew.forEach((w,i)=>{
+    const id = 'nw_' + i;
+    addNode(id, 'action', WF_ACTIONS[w.action] || w.action, 'New conversation', COL[1], midY + 96 + i * 72);
+    addEdge(recvId, id);
+  });
+
+  addNode('kb', 'knowledge', 'Search knowledge', kbLabel, COL[2], midY);
+  addEdge(recvId, 'kb');
+
+  addNode('decide', 'decide', 'Found answer?', hasKb ? 'Retrieve + score' : 'Needs knowledge', COL[3], midY);
+  addEdge('kb', 'decide');
+
+  const yesId = isCall ? 'speak' : 'reply';
+  const noId = 'refuse';
+  addNode(yesId, 'action', isCall ? 'Speak reply' : 'Reply from knowledge', isCall ? 'Voice response' : 'Grounded answer', COL[4], midY - 78);
+  addNode(noId, 'action', isCall ? 'Refuse / transfer' : 'Refuse unknown', 'No hallucination', COL[4], midY + 78);
+  addEdge('decide', yesId, 'yes');
+  addEdge('decide', noId, 'no');
+
+  let yesTail = yesId;
+  let noTail = noId;
+  afterReply.forEach((w,i)=>{
+    const id = 'ar_' + i;
+    addNode(id, 'action', WF_ACTIONS[w.action] || w.action, w.name, COL[5], midY - 110 + i * 72);
+    addEdge(yesTail, id);
+    yesTail = id;
+  });
+  onUnknown.forEach((w,i)=>{
+    const id = 'uk_' + i;
+    addNode(id, 'action', WF_ACTIONS[w.action] || w.action, w.name, COL[5], midY + 50 + i * 72);
+    addEdge(noTail, id);
+    noTail = id;
+  });
+
+  addNode('out', 'output', isCall ? 'Log call · Inbox' : 'Deliver reply', isCall ? 'Omni Phone thread' : 'Widget · Inbox', COL[6], midY - 8, OW, OH);
+  addEdge(yesTail, 'out');
+  addEdge(noTail, 'out');
+
+  onCallEnd.forEach((w,i)=>{
+    const id = 'ce_' + i;
+    addNode(id, 'action', WF_ACTIONS[w.action] || w.action, 'Call ended', COL[6], midY + 100 + i * 72);
+    addEdge('out', id);
+  });
+
+  const minX = Math.min(...nodes.map(n=>n.x));
+  const minY = Math.min(...nodes.map(n=>n.y));
+  const padX = 36 - minX;
+  const padY = 36 - minY;
+  if(padX || padY){
+    nodes.forEach(n=>{ n.x += padX; n.y += padY; });
+  }
+
+  const maxX = Math.max(...nodes.map(n=>n.x + n.w), 800);
+  const maxY = Math.max(...nodes.map(n=>n.y + n.h), 280);
+  return {
+    nodes,
+    edges,
+    width: maxX + 56,
+    height: maxY + 56,
+    agentId: a.id,
+    happyPath: buildHappyPath(nodes, edges, triggerIds[0], yesId)
+  };
+}
+function buildHappyPath(nodes, edges, startId, preferYesId){
+  const ids = new Set(nodes.map(n=>n.id));
+  if(!ids.has(startId)) return [];
+  const path = [startId];
+  let cur = startId;
+  const used = new Set([startId]);
+  for(let guard = 0; guard < 24; guard++){
+    const outs = edges.filter(e=>e.from===cur && !used.has(e.to));
+    if(!outs.length) break;
+    let next = outs.find(e=>e.to === preferYesId)
+      || outs.find(e=>e.label==='yes')
+      || outs.find(e=>e.to==='out')
+      || outs.find(e=>e.to.startsWith('ar_'))
+      || outs.find(e=>!e.label || e.label==='transcribe')
+      || outs[0];
+    if(!next) break;
+    path.push(next.to);
+    used.add(next.to);
+    cur = next.to;
+    if(cur === 'out') break;
+  }
+  if(!path.includes('out') && ids.has('out')) path.push('out');
+  return path;
+}
+
+let wfCanvasGraph = null;
+let wfSimTimer = null;
+
+function edgePath(a, b){
+  const x1 = a.x + a.w;
+  const y1 = a.y + a.h / 2;
+  const x2 = b.x;
+  const y2 = b.y + b.h / 2;
+  const mx = (x1 + x2) / 2;
+  return `M ${x1} ${y1} C ${mx} ${y1}, ${mx} ${y2}, ${x2} ${y2}`;
+}
+function renderWorkflowCanvas(){
+  const svg = document.getElementById('wf-canvas-svg');
+  const empty = document.getElementById('wf-canvas-empty');
+  const hint = document.getElementById('wf-canvas-hint');
+  fillWorkflowCanvasAgentSelect();
+  const agentId = document.getElementById('wf-canvas-agent')?.value;
+  const a = agents.find(x=>x.id===agentId);
+  if(!svg) return;
+  if(wfSimTimer){ clearTimeout(wfSimTimer); wfSimTimer = null; }
+  if(!a){
+    wfCanvasGraph = null;
+    svg.innerHTML = '';
+    if(empty){ empty.classList.remove('hidden'); empty.textContent = 'Create an agent to preview its workflow map.'; }
+    if(hint) hint.textContent = 'Auto-built from this agent’s role, channels, knowledge, and enabled automations.';
+    return;
+  }
+  if(empty) empty.classList.add('hidden');
+  let graph;
+  try{
+    graph = buildAgentFlowGraph(a);
+  }catch(err){
+    console.error(err);
+    wfCanvasGraph = null;
+    svg.innerHTML = '';
+    if(empty){ empty.classList.remove('hidden'); empty.textContent = 'Could not build workflow for this agent.'; }
+    return;
+  }
+  wfCanvasGraph = graph;
+  if(hint){
+    const ch = (a.channels||[]).join(', ') || 'no channels';
+    const src = (a.sources||[]).filter(s=>s.content && s.status!=='error').length;
+    const nAuto = agentAutomations(a.id).length;
+    hint.textContent = `${a.name} · ${a.role} · ${ch} · ${src} knowledge source${src===1?'':'s'} · ${nAuto} automation${nAuto===1?'':'s'} · ${graph.nodes.length} steps`;
+  }
+
+  const markerId = 'wfArrow';
+  let html = `<defs>
+    <marker id="${markerId}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path class="wf-arrow" d="M 0 0 L 10 5 L 0 10 z"/>
+    </marker>
+    <marker id="${markerId}Active" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path class="wf-arrow active" d="M 0 0 L 10 5 L 0 10 z"/>
+    </marker>
+  </defs>`;
+  svg.setAttribute('viewBox', `0 0 ${graph.width} ${graph.height}`);
+  svg.setAttribute('width', graph.width);
+  svg.setAttribute('height', Math.max(graph.height, 300));
+
+  const byId = Object.fromEntries(graph.nodes.map(n=>[n.id, n]));
+  graph.edges.forEach((e,i)=>{
+    const aN = byId[e.from], bN = byId[e.to];
+    if(!aN || !bN) return;
+    const d = edgePath(aN, bN);
+    const midX = (aN.x + aN.w + bN.x) / 2;
+    const midY = (aN.y + aN.h / 2 + bN.y + bN.h / 2) / 2 - 8;
+    html += `<path class="wf-edge" id="wf-edge-${i}" data-from="${e.from}" data-to="${e.to}" d="${d}" marker-end="url(#${markerId})"/>`;
+    if(e.label){
+      html += `<text class="wf-edge-label" x="${midX}" y="${midY}" text-anchor="middle">${escapeHtml(e.label)}</text>`;
+    }
+  });
+  graph.nodes.forEach(n=>{
+    const rx = n.type === 'output' ? 10 : 8;
+    html += `<g class="wf-node" id="wf-node-${n.id}" data-id="${n.id}">
+      <rect class="wf-node-rect ${n.type}" x="${n.x}" y="${n.y}" width="${n.w}" height="${n.h}" rx="${rx}" ry="${rx}"/>
+      <text class="wf-node-label" x="${n.x + 12}" y="${n.y + (n.sub ? 24 : n.h/2 + 4)}">${escapeHtml(n.label)}</text>
+      ${n.sub ? `<text class="wf-node-sub" x="${n.x + 12}" y="${n.y + 42}">${escapeHtml(n.sub)}</text>` : ''}
+    </g>`;
+  });
+  svg.innerHTML = html;
+  const wrap = document.getElementById('wf-canvas-wrap');
+  if(wrap) wrap.scrollLeft = 0;
+}
+function onWorkflowCanvasAgentChange(){
+  renderWorkflowCanvas();
+}
+function clearWorkflowCanvasHighlight(){
+  document.querySelectorAll('#wf-canvas-svg .wf-node-rect.active').forEach(el=>el.classList.remove('active'));
+  document.querySelectorAll('#wf-canvas-svg .wf-edge.active').forEach(el=>{
+    el.classList.remove('active');
+    el.setAttribute('marker-end', 'url(#wfArrow)');
+  });
+}
+function simulateWorkflowCanvas(){
+  if(!wfCanvasGraph || !wfCanvasGraph.nodes.length){
+    showToast('Select an agent with a workflow map first');
+    return;
+  }
+  if(wfSimTimer){ clearTimeout(wfSimTimer); wfSimTimer = null; }
+  clearWorkflowCanvasHighlight();
+
+  const path = (wfCanvasGraph.happyPath && wfCanvasGraph.happyPath.length)
+    ? wfCanvasGraph.happyPath.slice()
+    : [];
+
+  if(!path.length){
+    showToast('No runnable path for this agent');
+    return;
+  }
+
+  let step = 0;
+  const a = agents.find(x=>x.id===wfCanvasGraph.agentId);
+  showToast('Simulating ' + (a?.name || 'agent') + ' workflow…');
+  const tick = ()=>{
+    if(step >= path.length){
+      wfSimTimer = setTimeout(clearWorkflowCanvasHighlight, 1000);
+      return;
+    }
+    const id = path[step];
+    const el = document.querySelector('#wf-node-' + id + ' .wf-node-rect');
+    if(el){
+      el.classList.add('active');
+      try{ el.scrollIntoView({ block:'nearest', inline:'nearest', behavior:'smooth' }); }catch(e){}
+    }
+    if(step > 0){
+      const prev = path[step-1];
+      wfCanvasGraph.edges.forEach((e,i)=>{
+        if(e.from===prev && e.to===id){
+          const edge = document.getElementById('wf-edge-'+i);
+          if(edge){
+            edge.classList.add('active');
+            edge.setAttribute('marker-end', 'url(#wfArrowActive)');
+          }
+        }
+      });
+    }
+    step++;
+    wfSimTimer = setTimeout(tick, 520);
+  };
+  tick();
+}
+function refreshWorkflowCanvasIfVisible(){
+  const page = document.getElementById('page-workflows');
+  if(page && !page.classList.contains('hidden')) renderWorkflowCanvas();
+}
 function renderWorkflows(){
   fillWorkflowAgentSelect();
+  fillWorkflowCanvasAgentSelect();
+  renderWorkflowCanvas();
   const list = document.getElementById('workflows-list');
   const logEl = document.getElementById('workflows-log');
   if(!list) return;
   if(!workflows.length){
-    list.innerHTML = '<p style="font-size:12.5px;color:var(--muted);margin:0;">No workflows yet. Create one on the right.</p>';
+    list.innerHTML = '<p style="font-size:12.5px;color:var(--muted);margin:0;">No automations yet. Create one on the right — they show up on the canvas.</p>';
   } else {
     list.innerHTML = workflows.map(w=>{
       const agentName = w.agentId === 'all' ? 'All agents' : (agents.find(a=>a.id===w.agentId)?.name || 'Deleted agent');
@@ -1152,6 +1529,8 @@ function fireWorkflows(trigger, ctx){
   persistWorkflows();
   persistWorkflowLog();
   if(ctx.thread) persistInbox();
+  const page = document.getElementById('page-workflows');
+  if(page && !page.classList.contains('hidden')) renderWorkflows();
 }
 
 /* ---------------- INTEGRATIONS ---------------- */
@@ -1219,6 +1598,7 @@ function deleteAgent(id){
   renderKnowledge();
   renderIntegrations();
   renderConversations();
+  renderWorkflows();
   showToast('Agent deleted');
   goPage('agents');
 }
@@ -1286,6 +1666,7 @@ function saveEdit(){
   document.getElementById('detail-avatar').textContent = a.name.charAt(0);
   renderAgentsGrid(); renderOverview(); renderIntegrations();
   persistAgents();
+  refreshWorkflowCanvasIfVisible();
   showToast('Changes saved');
 }
 function renderDetailSources(){
@@ -1324,6 +1705,7 @@ async function addDetailFile(e){
   }
   renderDetailSources(); renderKnowledge();
   persistAgents();
+  refreshWorkflowCanvasIfVisible();
 }
 function removeDetailSource(i){
   const a = agents.find(x=>x.id===activeDetailId); if(!a) return;
@@ -1331,6 +1713,7 @@ function removeDetailSource(i){
   reindexAgent(a);
   renderDetailSources(); renderKnowledge();
   persistAgents();
+  refreshWorkflowCanvasIfVisible();
 }
 
 /* ---------------- WIZARD ---------------- */
@@ -1548,7 +1931,9 @@ function createAgent(){
   reindexAgent(newAgent);
   persistAgents();
   closeWizard();
-  renderAgentsGrid(); renderOverview(); renderKnowledge(); renderIntegrations();
+  renderAgentsGrid(); renderOverview(); renderKnowledge(); renderIntegrations(); renderWorkflows();
+  const canvasSel = document.getElementById('wf-canvas-agent');
+  if(canvasSel) canvasSel.value = id;
   showToast(isCall ? 'Call agent created — upload knowledge & test on Voice' : 'Agent created — copy your embed code');
   openAgentDetail(id);
   detailTab(isCall ? 'voice' : 'channels');
@@ -1980,9 +2365,12 @@ function createCallAgentFromVoice(role){
   renderOverview();
   renderKnowledge();
   renderIntegrations();
+  renderWorkflows();
   renderAIVoicePage();
   const sel = document.getElementById('vp-agent');
   if(sel) sel.value = id;
+  const canvasSel = document.getElementById('wf-canvas-agent');
+  if(canvasSel) canvasSel.value = id;
   onVoicePageAgentChange();
   showToast(isInbound ? 'Inbound call agent created' : 'Outbound call agent created');
 }
@@ -2092,6 +2480,7 @@ function saveVoiceNoteSettings(){
   persistAgents();
   renderVoicePanel();
   renderEmbedPanel();
+  refreshWorkflowCanvasIfVisible();
   showToast('Voice note settings saved');
 }
 function syncWidgetPreviewMic(){
@@ -2144,19 +2533,27 @@ async function toggleVoiceNoteDemoRecord(){
       const blob = new Blob(vnDemoChunks, { type: 'audio/webm' });
       if(vnDemoUrl) URL.revokeObjectURL(vnDemoUrl);
       vnDemoUrl = URL.createObjectURL(blob);
+      const transcript = (vnDemoTranscript || '').trim();
+      vnDemoLastNote = {
+        audioUrl: vnDemoUrl,
+        duration: vnDemoSeconds,
+        transcript,
+        at: Date.now()
+      };
       const audio = document.getElementById('vn-demo-audio');
       if(audio){ audio.src = vnDemoUrl; audio.classList.remove('hidden'); }
       const playBtn = document.getElementById('vn-play-btn');
       if(playBtn) playBtn.disabled = false;
+      const sendBtn = document.getElementById('vn-send-btn');
+      if(sendBtn) sendBtn.disabled = false;
       const recBtn = document.getElementById('vn-rec-btn');
       if(recBtn){ recBtn.classList.remove('recording'); recBtn.textContent = 'Hold / tap to record'; recBtn.disabled = !a.voiceNotes.enabled; }
       const status = document.getElementById('vn-demo-status');
-      if(status) status.textContent = 'Recording saved';
+      if(status) status.textContent = 'Recording saved — ready to send';
       const txEl = document.getElementById('vn-demo-transcript');
-      let text = (vnDemoTranscript || '').trim();
       if(a.voiceNotes.transcribe){
-        if(!text) text = '(Demo) No speech detected — try again or type in chat.';
-        if(txEl){ txEl.style.display = 'block'; txEl.textContent = 'Transcript: ' + text; }
+        const shown = transcript || '(Demo) No speech detected — you can still send the audio note.';
+        if(txEl){ txEl.style.display = 'block'; txEl.textContent = 'Transcript: ' + shown; }
       } else if(txEl){
         txEl.style.display = 'block';
         txEl.textContent = 'Transcription is off — audio only (' + formatVnTime(vnDemoSeconds) + ').';
@@ -2164,6 +2561,9 @@ async function toggleVoiceNoteDemoRecord(){
     };
     vnDemoRecorder.start();
     vnDemoSeconds = 0;
+    vnDemoLastNote = null;
+    const sendBtn = document.getElementById('vn-send-btn');
+    if(sendBtn) sendBtn.disabled = true;
     const status = document.getElementById('vn-demo-status');
     const timer = document.getElementById('vn-demo-timer');
     const recBtn = document.getElementById('vn-rec-btn');
@@ -2205,6 +2605,73 @@ function playVoiceNoteDemo(){
   audio.classList.remove('hidden');
   audio.play().catch(()=>showToast('Could not play audio'));
 }
+function sendVoiceNoteDemoToInbox(){
+  const a = agents.find(x=>x.id===activeDetailId); if(!a) return;
+  normalizeAgent(a);
+  if(!a.voiceNotes.enabled){ showToast('Enable voice notes first'); return; }
+  if(!vnDemoLastNote || !vnDemoLastNote.audioUrl){
+    showToast('Record a voice note first');
+    return;
+  }
+  const note = vnDemoLastNote;
+  const transcript = (note.transcript || '').trim();
+  const customerText = transcript
+    ? ('🎤 Voice note: ' + transcript)
+    : ('🎤 Voice note (' + formatVnTime(note.duration || 0) + ')');
+  const names = ['Alex R.','Sam T.','Jordan L.','Casey M.','Riley P.'];
+  const customer = names[Math.floor(Math.random()*names.length)];
+  const thread = {
+    id: 'th_vn_' + Math.random().toString(36).slice(2,8),
+    channel: 'Web Chat',
+    customer,
+    phone: '',
+    agentId: a.id,
+    updatedAt: Date.now(),
+    tag: 'Voice note',
+    messages: [{
+      from: 'customer',
+      type: 'voice',
+      text: customerText,
+      transcript: transcript || '',
+      audioUrl: note.audioUrl,
+      duration: note.duration || 0,
+      at: Date.now()
+    }]
+  };
+
+  let answer;
+  let found = false;
+  if(!a.voiceNotes.transcribe){
+    answer = 'I received your voice note (' + formatVnTime(note.duration || 0) + '). Enable “Transcribe voice notes” so I can answer from knowledge.';
+  } else if(!transcript){
+    answer = 'I got your voice note but couldn’t transcribe it. Try again or type your question.';
+  } else {
+    const kb = answerFromSources(transcript, a);
+    answer = kb.answer;
+    found = kb.found;
+  }
+  thread.messages.push({ from:'agent', text: answer, at: Date.now()+1 });
+
+  inbox.unshift(thread);
+  persistInbox();
+  const ctx = { agentId: a.id, agentName: a.name, channel: 'Web Chat', thread, found };
+  fireWorkflows('new_conversation', ctx);
+  fireWorkflows('after_reply', ctx);
+  if(a.voiceNotes.transcribe && transcript && found === false) fireWorkflows('unknown_answer', ctx);
+
+  const sendBtn = document.getElementById('vn-send-btn');
+  if(sendBtn) sendBtn.disabled = true;
+  const status = document.getElementById('vn-demo-status');
+  if(status) status.textContent = 'Sent to Omni inbox';
+
+  omniFilter = 'Web Chat';
+  setOmniFilter('Web Chat');
+  activeThreadId = thread.id;
+  goPage('conversations');
+  openOmniThread(thread.id);
+  showToast('Voice note conversation started');
+  refreshWorkflowCanvasIfVisible();
+}
 function toggleVoiceInbound(on){
   const a = agents.find(x=>x.id===activeDetailId); if(!a) return;
   normalizeAgent(a);
@@ -2215,6 +2682,7 @@ function toggleVoiceInbound(on){
   if(isCallAgentRole(a.role)) renderChannelsVoiceConnect();
   renderAgentsGrid();
   renderIntegrations();
+  refreshWorkflowCanvasIfVisible();
   showToast(on ? 'Inbound AI answering enabled (demo)' : 'Inbound disabled');
 }
 function toggleVoiceOutbound(on){
@@ -2227,6 +2695,7 @@ function toggleVoiceOutbound(on){
   if(isCallAgentRole(a.role)) renderChannelsVoiceConnect();
   renderAgentsGrid();
   renderIntegrations();
+  refreshWorkflowCanvasIfVisible();
   showToast(on ? 'Outbound calling enabled (demo)' : 'Outbound disabled');
 }
 function updateCampaignType(){
