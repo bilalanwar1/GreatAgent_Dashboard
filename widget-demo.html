@@ -3,49 +3,234 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Your Website — Widget Preview</title>
+<title>Live preview — GreatAgen</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-  :root{ --ink:#0B0F19; --grad:linear-gradient(135deg,#5B5FEF,#8B5CF6); }
+  :root{
+    --ink:#0B0F19;
+    --muted:#6B7180;
+    --line:#E7E9F3;
+    --grad:linear-gradient(135deg,#5B5FEF,#8B5CF6);
+    --bg:#F6F7FB;
+  }
   *{box-sizing:border-box;}
-  body{margin:0;font-family:Inter,system-ui,sans-serif;color:#0F1424;background:#F6F7FB;min-height:100vh;}
-  header{background:#fff;border-bottom:1px solid #E7E9F3;padding:16px 28px;display:flex;align-items:center;justify-content:space-between;}
-  .brand{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:18px;}
-  .brand span{display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--grad);transform:rotate(45deg);margin-right:8px;}
-  main{max-width:760px;margin:0 auto;padding:48px 24px;}
-  h1{font-family:'Space Grotesk',sans-serif;font-size:34px;margin:0 0 12px;}
-  p{color:#6B7180;line-height:1.6;font-size:15px;}
-  .note{margin-top:28px;padding:16px 18px;border:1px dashed #C9CBE0;border-radius:12px;background:#fff;font-size:13.5px;color:#6B7180;}
-  .note b{color:#0F1424;}
-  a.back{font-size:13px;font-weight:600;color:#5B5FEF;text-decoration:none;}
+  body{
+    margin:0;
+    font-family:Inter,system-ui,sans-serif;
+    color:#0F1424;
+    background:
+      radial-gradient(900px 420px at 12% -10%, rgba(91,95,239,.14), transparent 55%),
+      radial-gradient(700px 380px at 100% 0%, rgba(139,92,246,.12), transparent 50%),
+      var(--bg);
+    min-height:100vh;
+  }
+  header{
+    background:rgba(255,255,255,.92);
+    backdrop-filter:blur(8px);
+    border-bottom:1px solid var(--line);
+    padding:16px 28px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+  }
+  .brand{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:18px;display:flex;align-items:center;gap:8px;}
+  .brand-mark{
+    width:10px;height:10px;border-radius:2px;background:var(--grad);
+    transform:rotate(45deg);flex-shrink:0;
+  }
+  .preview-pill{
+    font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;
+    color:#5B5FEF;background:#EEF0FF;border-radius:999px;padding:5px 10px;
+  }
+  a.back{font-size:13px;font-weight:600;color:#5B5FEF;text-decoration:none;white-space:nowrap;}
+  main{max-width:720px;margin:0 auto;padding:40px 24px 120px;}
+  .hero-kicker{font-size:12px;font-weight:600;color:#5B5FEF;letter-spacing:.06em;text-transform:uppercase;margin:0 0 10px;}
+  h1{font-family:'Space Grotesk',sans-serif;font-size:clamp(28px,5vw,38px);margin:0 0 8px;line-height:1.15;}
+  .role-line{font-size:16px;color:var(--muted);margin:0 0 18px;}
+  .role-line strong{color:#0F1424;font-weight:600;}
+  .meta{
+    display:flex;flex-wrap:wrap;gap:8px;margin:0 0 22px;
+  }
+  .chip{
+    font-size:12.5px;font-weight:500;color:#3B4154;
+    background:#fff;border:1px solid var(--line);border-radius:999px;padding:6px 12px;
+  }
+  .lead{color:var(--muted);line-height:1.65;font-size:15px;margin:0 0 20px;max-width:40rem;}
+  .status{
+    margin-top:8px;padding:16px 18px;border-radius:14px;border:1px solid var(--line);
+    background:#fff;font-size:13.5px;color:var(--muted);line-height:1.55;
+  }
+  .status b{color:#0F1424;}
+  .status.warn{border-color:#FECACA;background:#FEF2F2;color:#7F1D1D;}
+  .status.warn b{color:#991B1B;}
+  .hint{margin-top:16px;font-size:13px;color:var(--muted);}
+  code{font-size:12px;background:#EEF0FF;padding:2px 6px;border-radius:4px;}
 </style>
 </head>
 <body>
   <header>
-    <div class="brand"><span></span> Example Business Site</div>
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <span id="header-brand">Agent live preview</span>
+      <span class="preview-pill">Live preview</span>
+    </div>
     <a class="back" href="index.html">← Back to GreatAgen</a>
   </header>
   <main>
-    <h1>Welcome to our website</h1>
-    <p>This page simulates your customer-facing site. The GreatAgen chat widget is loaded in the bottom-right corner using your agent's embed code.</p>
-    <div class="note">
-      <b>How to use:</b> Create or open an agent in GreatAgen → Channels → Copy embed code.
-      Open this preview with <code>?agent=YOUR_AGENT_ID</code> (the dashboard “Open live preview” link does this for you).
-    </div>
+    <p class="hero-kicker">Your agent · customer chat</p>
+    <h1 id="agent-name">Loading agent…</h1>
+    <p class="role-line" id="agent-role-line"></p>
+    <div class="meta" id="agent-meta" hidden></div>
+    <p class="lead" id="agent-lead">
+      Opening the live chat widget for this agent. Ask questions the way a customer would on your website.
+    </p>
+    <div class="status" id="agent-status">Looking up this agent in your GreatAgen workspace…</div>
+    <p class="hint" id="agent-hint"></p>
   </main>
 
   <script>
     (function(){
+      const PREVIEW_KEY = 'greatagen_preview_agent';
       const params = new URLSearchParams(location.search);
-      const agentId = params.get('agent') || 'agt_support01';
+      let requestedId = (params.get('agent') || '').trim();
+      let usedFallback = false;
+
+      function allAgents(){
+        const out = [];
+        const seen = {};
+        try{
+          for(let i = 0; i < localStorage.length; i++){
+            const key = localStorage.key(i);
+            if(!key || key.indexOf('greatagen_agents') !== 0) continue;
+            const list = JSON.parse(localStorage.getItem(key) || '[]');
+            if(!Array.isArray(list)) continue;
+            list.forEach(a => {
+              if(a && a.id && !seen[a.id]){
+                seen[a.id] = true;
+                out.push(a);
+              }
+            });
+          }
+        }catch(e){}
+        return out;
+      }
+
+      function loadAgent(id){
+        if(!id) return null;
+        return allAgents().find(a => a.id === id) || null;
+      }
+
+      function isMessagingAgent(a){
+        const ch = a.channels || [];
+        return ch.includes('Web Chat') || ch.includes('WhatsApp');
+      }
+
+      function pickFallbackAgent(){
+        const list = allAgents();
+        if(!list.length) return null;
+        try{
+          const lastId = localStorage.getItem(PREVIEW_KEY) || '';
+          const last = list.find(a => a.id === lastId);
+          if(last) return last;
+        }catch(e){}
+        return list.find(isMessagingAgent) || list[0];
+      }
+
+      function esc(s){
+        return String(s == null ? '' : s)
+          .replace(/&/g,'&amp;')
+          .replace(/</g,'&lt;')
+          .replace(/>/g,'&gt;')
+          .replace(/"/g,'&quot;');
+      }
+
+      let agent = loadAgent(requestedId);
+      if(!agent){
+        agent = pickFallbackAgent();
+        if(agent){
+          usedFallback = true;
+          requestedId = agent.id;
+          try{
+            const url = new URL(location.href);
+            url.searchParams.set('agent', agent.id);
+            history.replaceState(null, '', url.toString());
+          }catch(e){}
+        }
+      }
+
+      if(agent){
+        try{ localStorage.setItem(PREVIEW_KEY, agent.id); }catch(e){}
+      }
+
+      const nameEl = document.getElementById('agent-name');
+      const roleEl = document.getElementById('agent-role-line');
+      const metaEl = document.getElementById('agent-meta');
+      const statusEl = document.getElementById('agent-status');
+      const hintEl = document.getElementById('agent-hint');
+      const brandEl = document.getElementById('header-brand');
+      const leadEl = document.getElementById('agent-lead');
+
+      if(agent){
+        const name = agent.name || 'Untitled agent';
+        const role = agent.role || 'Assistant';
+        const industry = agent.industry || '';
+        const lang = agent.language || '';
+        const sources = Array.isArray(agent.sources) ? agent.sources.length : 0;
+        const chunks = Array.isArray(agent.knowledgeChunks) ? agent.knowledgeChunks.length : 0;
+        const voiceOn = !!(agent.voiceNotes && agent.voiceNotes.enabled);
+
+        document.title = name + ' — Live preview';
+        brandEl.textContent = name;
+        nameEl.textContent = name;
+        roleEl.innerHTML = '<strong>' + esc(role) + '</strong> agent · ready to chat';
+        leadEl.textContent = 'This is a live preview of ' + name + '. The chat is open in the corner — type or use the mic like a customer on your site.';
+
+        const chips = [];
+        if(industry) chips.push(industry);
+        if(lang) chips.push(lang);
+        chips.push(sources ? sources + ' knowledge source' + (sources === 1 ? '' : 's') : 'No knowledge yet');
+        if(chunks) chips.push(chunks + ' chunks indexed');
+        if(voiceOn) chips.push('Voice notes on');
+        metaEl.hidden = false;
+        metaEl.innerHTML = chips.map(c => '<span class="chip">' + esc(c) + '</span>').join('');
+
+        if(sources || chunks){
+          statusEl.innerHTML = '<b>Live:</b> Answers come from this agent’s knowledge. Chat is open automatically.';
+        }else{
+          statusEl.classList.add('warn');
+          statusEl.innerHTML = '<b>No knowledge yet.</b> The agent can greet you, but will refuse questions until you add a website URL or upload files in GreatAgen.';
+        }
+        if(usedFallback){
+          statusEl.innerHTML =
+            '<b>Auto-selected:</b> No agent ID in the link, so we opened <b>' + esc(name) + '</b>. ' +
+            (sources || chunks
+              ? 'Chat is open automatically.'
+              : 'Add knowledge in GreatAgen for grounded answers.');
+          if(!(sources || chunks)) statusEl.classList.add('warn');
+          else statusEl.classList.remove('warn');
+        }
+        hintEl.innerHTML = 'Agent ID: <code>' + esc(agent.id) + '</code>';
+      }else{
+        nameEl.textContent = 'No agents found';
+        roleEl.textContent = 'Create an agent in GreatAgen first.';
+        leadEl.textContent = 'Live preview needs an agent saved in this browser. Create one, then open Channels → Open live preview.';
+        statusEl.classList.add('warn');
+        statusEl.innerHTML = '<b>Nothing to preview.</b> Log into GreatAgen in this browser, create a chat agent, then try again.';
+        hintEl.innerHTML = '<a class="back" href="index.html">Go to GreatAgen dashboard</a>';
+      }
+
+      const agentId = agent ? agent.id : '';
       const kb = document.createElement('script');
       kb.src = 'js/knowledge.js';
       kb.onload = function(){
+        if(!agentId) return;
         const s = document.createElement('script');
         s.src = 'js/widget.js';
         s.defer = true;
         s.setAttribute('data-agent-id', agentId);
+        s.setAttribute('data-open', '1');
         document.body.appendChild(s);
       };
       document.body.appendChild(kb);

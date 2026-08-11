@@ -75,7 +75,7 @@ function normalizeAgent(a){
   }
   sanitizeCampaign(a.voiceCalling.campaign);
   if(!a.voiceNotes){
-    a.voiceNotes = { enabled:false, maxSeconds:60, transcribe:true, widgetMic:true };
+    a.voiceNotes = { enabled:true, maxSeconds:60, transcribe:true, widgetMic:true };
   }
   a.voiceNotes.enabled = !!a.voiceNotes.enabled;
   a.voiceNotes.transcribe = a.voiceNotes.transcribe !== false;
@@ -1922,7 +1922,8 @@ function createAgent(){
       outbound: isOutbound || false,
       demo:true,
       campaign:{ name: isOutbound ? 'Lead Follow-up' : 'Renewal Campaign', audience: isOutbound ? 'New leads this week' : 'Expiring in 30 days', total:0, completed:0, successful:0, running:false }
-    }
+    },
+    voiceNotes:{ enabled:true, maxSeconds:60, transcribe:true, widgetMic:true }
   };
   // Inbound call agents can also do light outbound campaigns if needed later — keep outbound false by default
   if(isInbound){ newAgent.voiceCalling.inbound = true; newAgent.voiceCalling.outbound = false; }
@@ -2016,7 +2017,10 @@ function renderEmbedPanel(){
   const ta = document.getElementById('embed-code');
   if(ta) ta.value = code;
   const link = document.getElementById('embed-preview-link');
-  if(link) link.href = 'widget-demo.html?agent=' + encodeURIComponent(a.id);
+  if(link){
+    link.href = 'widget-demo.html?agent=' + encodeURIComponent(a.id);
+    try{ localStorage.setItem('greatagen_preview_agent', a.id); }catch(e){}
+  }
   const meta = document.getElementById('embed-meta');
   if(meta){
     const wa = a.whatsapp?.connected ? ' · WhatsApp demo connected' : '';
@@ -2123,6 +2127,22 @@ function simulateWhatsAppIncoming(fromInbox){
   showToast('Incoming WhatsApp message (demo)');
 }
 
+function openLivePreview(e){
+  const a = agents.find(x=>x.id===activeDetailId);
+  const link = document.getElementById('embed-preview-link');
+  if(!a){
+    if(e) e.preventDefault();
+    showToast('Open an agent first');
+    return false;
+  }
+  const href = 'widget-demo.html?agent=' + encodeURIComponent(a.id);
+  try{ localStorage.setItem('greatagen_preview_agent', a.id); }catch(err){}
+  if(link) link.href = href;
+  if(e && (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1)) return true;
+  if(e) e.preventDefault();
+  window.open(href, '_blank', 'noopener');
+  return false;
+}
 function copyEmbedCode(){
   const ta = document.getElementById('embed-code');
   if(!ta || !ta.value) return;
@@ -2355,7 +2375,8 @@ function createCallAgentFromVoice(role){
         audience: isOutbound ? 'New leads this week' : 'Expiring in 30 days',
         total: 0, completed: 0, successful: 0, running: false
       }
-    }
+    },
+    voiceNotes: { enabled:true, maxSeconds:60, transcribe:true, widgetMic:true }
   };
   agents.unshift(newAgent);
   reindexAgent(newAgent);

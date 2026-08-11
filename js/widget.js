@@ -112,7 +112,7 @@
       name: 'GreatAgen Assistant',
       role: 'Customer Service',
       sources: [],
-      voiceNotes: { enabled: false, maxSeconds: 60, transcribe: true, widgetMic: true }
+      voiceNotes: { enabled: true, maxSeconds: 60, transcribe: true, widgetMic: true }
     };
 
     injectStyles();
@@ -326,6 +326,12 @@
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') reply();
     });
+
+    const openAttr = script && script.getAttribute('data-open');
+    if (openAttr === '1' || openAttr === 'true') {
+      panel.classList.add('open');
+      setTimeout(() => input.focus(), 80);
+    }
   }
 
   if (document.readyState === 'loading') {
